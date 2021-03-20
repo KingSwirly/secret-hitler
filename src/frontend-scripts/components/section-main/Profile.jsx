@@ -24,6 +24,17 @@ class ProfileWrapper extends React.Component {
 		};
 	}
 
+	static getDerivedStateFromProps(nextProps, prevState) {
+		const name = prevState && prevState.profileUser;
+		const newName = nextProps && nextProps.profile && nextProps.profile._id;
+		let updatedState = null;
+
+		if (name !== newName) {
+			updatedState = { ...updatedState, profileUser: newName, blacklistClicked: false };
+		}
+		return updatedState;
+	}
+
 	formatDateString(dateString) {
 		const date = new Date(dateString);
 
@@ -153,29 +164,43 @@ class ProfileWrapper extends React.Component {
 				return 'Nothing here!';
 			}
 
-			const formatedBio = [];
+			const formattedBio = [];
 			const words = text.split(' ');
 
-			words.forEach(word => {
-				if (/^https:\/\//i.test(word)) {
-					formatedBio.push(
-						<a key={word} href={word} title="External link" target="_blank" rel="nofollow noreferrer noopener">
+			words.forEach((word, index) => {
+				const validSiteURL = /http[s]?:\/\/(secrethitler\.io|localhost:8080)\/([a-zA-Z0-9#?=&\/\._-]*)/i;
+				if (validSiteURL.test(word)) {
+					const data = validSiteURL.exec(word);
+					const replayURL = data[2].startsWith('game/#/replay/');
+
+					formattedBio.push(
+						<a
+							key={index}
+							href={replayURL ? '/game/' + data[2].substring(5) : '/' + data[2]}
+							title={replayURL ? 'Link to a SH.io replay' : 'Link to something inside of SH.io'}
+						>
+							{replayURL ? data[2].substring(7) : data[2]}
+						</a>
+					);
+				} else if (/^https:\/\//i.test(word)) {
+					formattedBio.push(
+						<a key={index} href={word} title="External link" target="_blank" rel="nofollow noreferrer noopener">
 							{word.split('https://')[1]}
 						</a>,
 						' '
 					);
 				} else if (/^http:\/\//i.test(word)) {
-					formatedBio.push(
-						<a key={word} href={word} title="External link" target="_blank" rel="nofollow noreferrer noopener">
+					formattedBio.push(
+						<a key={index} href={word} title="External link" target="_blank" rel="nofollow noreferrer noopener">
 							{word.split('http://')[1]}
 						</a>,
 						' '
 					);
 				} else {
-					formatedBio.push(word, ' ');
+					formattedBio.push(word, ' ');
 				}
 			});
-			return formatedBio;
+			return formattedBio;
 		};
 
 		return (
@@ -224,12 +249,15 @@ class ProfileWrapper extends React.Component {
 					}
 				}
 				this.props.socket.emit('updateGameSettings', { blacklist: gameSettings.blacklist });
+				this.props.socket.emit('sendUser', this.props.userInfo); // To force a new playerlist pull
 			}
 		);
 	};
 
 	renderBlacklist() {
 		const { gameSettings } = this.props.userInfo;
+		const { profile } = this.props;
+		const name = profile._id;
 
 		return (
 			<button className="ui primary button blacklist-button" onClick={this.blackListClick}>
@@ -308,7 +336,7 @@ class ProfileWrapper extends React.Component {
 								<span>{gamesUntilRainbow}</span>
 							</div>
 						)}
-						{profile.lastConnectedIP !== 'no looking' && <p>Last connected IP: {profile.lastConnectedIP}</p>}
+						{profile.lastConnectedIP && <p>Last connected IP: {profile.lastConnectedIP}</p>}
 						{userInfo.userName === profile._id && (
 							<a style={{ display: 'block', color: 'yellow', textDecoration: 'underline', cursor: 'pointer' }} onClick={this.showBlacklist}>
 								Your blacklist
@@ -338,7 +366,7 @@ class ProfileWrapper extends React.Component {
 		return (
 			<h1 className="not-found ui icon center aligned header">
 				<i className="settings icon" />
-				<div className="content">No profile - go play some games!</div>
+				<div className="content">No profile</div>
 			</h1>
 		);
 	}
@@ -412,7 +440,4 @@ ProfileWrapper.propTypes = {
 	isUserClickable: PropTypes.bool
 };
 
-export default connect(
-	mapStateToProps,
-	mapDispatchToProps
-)(ProfileWrapper);
+export default connect(mapStateToProps, mapDispatchToProps)(ProfileWrapper);

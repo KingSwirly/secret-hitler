@@ -64,7 +64,7 @@ class ReplayGamechat extends React.Component {
 	handleTimestamps(timestamp) {
 		const { userInfo } = this.props;
 
-		if (userInfo.userName && userInfo.gameSettings && userInfo.gameSettings.enableTimestamps) {
+		if (userInfo && userInfo.userName && userInfo.gameSettings && userInfo.gameSettings.enableTimestamps) {
 			const hours = `0${new Date(timestamp).getHours()}`.slice(-2);
 			const minutes = `0${new Date(timestamp).getMinutes()}`.slice(-2);
 			const seconds = `0${new Date(timestamp).getSeconds()}`.slice(-2);
@@ -73,10 +73,44 @@ class ReplayGamechat extends React.Component {
 		}
 	}
 
+	getClassesFromType = type => {
+		if (type === 'player') {
+			return 'chat-player';
+		} else {
+			return `chat-role--${type}`;
+		}
+	};
+
+	parseClaim = claim => {
+		const { userInfo } = this.props;
+
+		const mode = (userInfo && userInfo.gameSettings && userInfo.gameSettings.claimCharacters) || 'legacy';
+		let liberalChar = 'L';
+		let fascistChar = 'F';
+		if (mode === 'legacy') {
+			liberalChar = 'B';
+			fascistChar = 'R';
+		} else if (mode === 'full') {
+			liberalChar = 'liberal';
+			fascistChar = 'fascist';
+		}
+		const claims = Array.from(claim);
+		const elements = claims.map((claimChar, index) => {
+			const isLiberal = claimChar === 'b';
+
+			return (
+				<span key={`claim${index}`}>
+					<span className={this.getClassesFromType(isLiberal ? 'liberal' : 'fascist')}>{isLiberal ? liberalChar : fascistChar}</span>
+					{mode === 'full' && index < claims.length - 1 ? <span>, </span> : <React.Fragment />}
+				</span>
+			);
+		});
+		return elements;
+	};
+
 	processChats() {
 		const { gameInfo, userInfo, userList } = this.props;
 		const { gameSettings } = userInfo;
-		const isBlind = gameInfo.general && gameInfo.general.blindMode && !gameInfo.gameState.isCompleted;
 		const seatedUserNames = gameInfo.publicPlayersState ? gameInfo.publicPlayersState.map(player => player.userName) : [];
 		const { showFullChat, showPlayerChat, showGameChat, showObserverChat } = this.state;
 		const compareChatStrings = (a, b) => {
@@ -130,7 +164,8 @@ class ReplayGamechat extends React.Component {
 							chat.staffRole &&
 							chat.staffRole !== '' &&
 							chat.staffRole !== 'trialmod' &&
-							chat.staffRole !== 'altmod')
+							chat.staffRole !== 'altmod' &&
+							chat.staffRole !== 'veteran')
 				);
 			if (!showFullChat) list = list.slice(-250);
 			return list.reduce((acc, chat, i) => {
@@ -140,11 +175,11 @@ class ReplayGamechat extends React.Component {
 					playerListPlayer.staffRole &&
 					playerListPlayer.staffRole !== '' &&
 					playerListPlayer.staffRole !== 'trialmod' &&
-					playerListPlayer.staffRole !== 'altmod';
+					playerListPlayer.staffRole !== 'altmod' &&
+					playerListPlayer.staffRole !== 'veteran';
 				const chatContents = processEmotes(chat.chat, isMod, this.props.allEmotes);
 				const isSeated = seatedUserNames.includes(chat.userName);
 				const isGreenText = chatContents && chatContents[0] ? /^>/i.test(chatContents[0]) : false;
-
 				acc.push(
 					chat.gameChat ? (
 						<div className={chat.chat[1] && chat.chat[1].type ? `item game-chat ${chat.chat[1].type}` : 'item game-chat'} key={i}>
@@ -179,21 +214,14 @@ class ReplayGamechat extends React.Component {
 									chatContents.length &&
 									chatContents.map((chatSegment, index) => {
 										if (chatSegment.type) {
-											let classes;
-
-											if (chatSegment.type === 'player') {
-												classes = 'chat-player';
-											} else {
-												classes = `chat-role--${chatSegment.type}`;
-											}
-
 											return (
-												<span key={index} className={classes}>
+												<span key={index} className={this.getClassesFromType(chatSegment.type)}>
 													{chatSegment.text}
 												</span>
 											);
+										} else if (chatSegment.claim) {
+											return <span key={index}>{this.parseClaim(chatSegment.claim)}</span>;
 										}
-
 										return chatSegment.text;
 									})}
 							</span>
@@ -208,30 +236,50 @@ class ReplayGamechat extends React.Component {
 					) : (
 						<div className="item" key={i}>
 							{this.handleTimestamps(chat.timestamp)}
-							{!(gameSettings && Object.keys(gameSettings).length && gameSettings.disableCrowns) &&
-								chat.tournyWins &&
-								!isBlind &&
-								renderCrowns(chat.tournyWins)}
+							{!(gameSettings && Object.keys(gameSettings).length && gameSettings.disableCrowns) && chat.tournyWins && renderCrowns(chat.tournyWins)}
 							{!(gameSettings && Object.keys(gameSettings).length && gameSettings.disableCrowns) &&
 								chat.previousSeasonAward &&
-								!isBlind &&
 								renderPreviousSeasonAward(chat.previousSeasonAward)}
-							{!(gameSettings && Object.keys(gameSettings).length && gameSettings.disableCrowns) && chat.specialTournamentStatus && !isBlind && (
-								<span title="This player was part of the winning team of the Fall 2019 tournament." className="crown-icon" />
-							)}
 							<span
 								className={
-									!playerListPlayer || (gameSettings && gameSettings.disablePlayerColorsInChat) || isBlind
-										? 'chat-user'
+									chat.staffRole === 'moderator' && chat.userName === 'Incognito'
+										? 'chat-user moderatorcolor'
+										: !playerListPlayer || (gameSettings && gameSettings.disablePlayerColorsInChat)
+										? isMod && !isSeated
+											? PLAYERCOLORS(playerListPlayer, !(gameSettings && gameSettings.disableSeasonal), 'chat-user')
+											: 'chat-user'
 										: PLAYERCOLORS(playerListPlayer, !(gameSettings && gameSettings.disableSeasonal), 'chat-user')
 								}
 							>
+								{isSeated ? (
+									''
+								) : chat.staffRole === 'moderator' ? (
+									<span data-tooltip="Moderator" data-inverted>
+										<span className="moderatorcolor">(Mod) 🌀</span>
+									</span>
+								) : chat.staffRole === 'editor' ? (
+									<span data-tooltip="Editor" data-inverted>
+										<span
+											className={
+												!playerListPlayer || (gameSettings && gameSettings.disablePlayerColorsInChat)
+													? isMod && !isSeated
+														? PLAYERCOLORS(playerListPlayer, !(gameSettings && gameSettings.disableSeasonal), 'chat-user')
+														: 'chat-user'
+													: PLAYERCOLORS(playerListPlayer, !(gameSettings && gameSettings.disableSeasonal), 'chat-user')
+											}
+										>
+											(Editor) 🔰
+										</span>
+									</span>
+								) : chat.staffRole === 'admin' ? (
+									<span data-tooltip="Admin" data-inverted>
+										<span className="admincolor">(Admin) 📛</span>
+									</span>
+								) : (
+									<span className="observer-chat">(Observer) </span>
+								)}
 								{isSeated
-									? isBlind
-										? `${
-												gameInfo.general.replacementNames[gameInfo.publicPlayersState.findIndex(publicPlayer => publicPlayer.userName === chat.userName)]
-										  } {${gameInfo.publicPlayersState.findIndex(publicPlayer => publicPlayer.userName === chat.userName) + 1}}`
-										: `${chat.userName} {${gameInfo.publicPlayersState.findIndex(publicPlayer => publicPlayer.userName === chat.userName) + 1}}`
+									? `${chat.userName} {${gameInfo.publicPlayersState.findIndex(publicPlayer => publicPlayer.userName === chat.userName) + 1}}`
 									: chat.userName}
 								{': '}
 							</span>

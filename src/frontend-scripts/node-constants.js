@@ -2,8 +2,14 @@ const cn = require('classnames');
 
 module.exports.TOU_CHANGES = [
 	{
+		changeVer: '1.5',
+		changeDesc:
+			'Updated to include mention of the new "Practice" mode and redefine rules on "Casual" mode.\nHate Speech rules updated to include transphobic and ableist language.\nClarified the rule on encouraging/glorifying physical harm.\nSlight adjustment to "ape"/"monkey" rule.\nSlight adjustment to doxxing rule.\nClarified cardback rules.\nSlightly redefined stalling rule.\nAdjusted rules on blacklist mentions, fake RQs, and RQ threats to focus more on gameplay influences.\nSitting for a game on one account while speaking with another account is now prohibited.\nRevised the table of offences and their corresponding suggested penalties.\nVarious other rewordings, reorganizations.'
+	},
+	{
 		changeVer: '1.4',
-		changeDesc: 'Adds specified punishment template for most rule violations\nUpdates rules regarding spoilers for TV shows, movies etc.\nUpdates rules regarding room titles\nUpdates rules on misclicks\nAll rules are listed in detail in the Terms of Use (linked below)'
+		changeDesc:
+			'Adds specified punishment template for most rule violations\nUpdates rules regarding spoilers for TV shows, movies etc.\nUpdates rules regarding room titles\nUpdates rules on misclicks\nAll rules are listed in detail in the Terms of Use (linked below)'
 	},
 	{
 		changeVer: '1.3',
@@ -25,11 +31,12 @@ module.exports.TOU_CHANGES = [
 	},
 	{
 		changeVer: '0.0',
-		changeDesc: 'Play as your role and try to win\nNo unfair influence: don\'t make promises as one role you wouldn\'t be able to keep as the other role\nDo not cheat\nNo hate speech or abusive/sexist/racist/discriminating language\nRespect other people\nNo attempts to harm the site, be it through hacking, ddosing, or any other malicious activity\nDo not attempt to circumvent rules or punishments\n'
+		changeDesc:
+			"Play as your role and try to win\nNo unfair influence: don't make promises as one role you wouldn't be able to keep as the other role\nDo not cheat\nNo hate speech or abusive/sexist/racist/discriminating language\nRespect other people\nNo attempts to harm the site, be it through hacking, ddosing, or any other malicious activity\nDo not attempt to circumvent rules or punishments\n"
 	}
 ];
 
-module.exports.CURRENTSEASONNUMBER = 8;
+module.exports.CURRENTSEASONNUMBER = 13;
 
 const ALPHANUMERIC = [...'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890'];
 const SYMBOLS = [...' -_=+!"£$%^&*()\\/.,<>?#~\'@;:[]{}'];
@@ -56,11 +63,12 @@ module.exports.PLAYERCOLORS = (user, isSeasonal, defaultClass, eloDisabled) => {
 			admin: user.staffRole === 'admin',
 			moderatorcolor: user.staffRole === 'moderator',
 			editorcolor: user.staffRole === 'editor',
-			cbell: user.userName === 'cbell',
-			jdudle3: user.userName === 'jdudle3',
-			max: user.userName === 'Max',
-			thejuststopo: user.userName === 'TheJustStopO',
-			moira: user.userName === 'moira'
+			veteran: user.staffRole === 'veteran',
+			cbell: user.userName === 'cbell' && user.staffRole === 'editor',
+			max: user.userName === 'Max' && user.staffRole === 'editor',
+			moira: user.userName === 'moira' && user.staffRole === 'editor',
+			bruno: user.userName === 'Bruno' && user.staffRole === 'editor',
+			anji: user.userName === 'Anji' && user.staffRole === 'editor'
 		});
 	} else if (
 		user.isContributor &&
@@ -85,22 +93,22 @@ module.exports.PLAYERCOLORS = (user, isSeasonal, defaultClass, eloDisabled) => {
 		return w + l >= 50
 			? eloDisabled
 				? cn(defaultClass, {
-					experienced1: w + l > 49,
-					experienced2: w + l > 99,
-					experienced3: w + l > 199,
-					experienced4: w + l > 299,
-					experienced5: w + l > 499,
-					onfire1: w / (w + l) > 0.52,
-					onfire2: w / (w + l) > 0.54,
-					onfire3: w / (w + l) > 0.56,
-					onfire4: w / (w + l) > 0.58,
-					onfire5: w / (w + l) > 0.6,
-					onfire6: w / (w + l) > 0.62,
-					onfire7: w / (w + l) > 0.64,
-					onfire8: w / (w + l) > 0.66,
-					onfire9: w / (w + l) > 0.68,
-					onfire10: w / (w + l) > 0.7
-				})
+						experienced1: w + l > 49,
+						experienced2: w + l > 99,
+						experienced3: w + l > 199,
+						experienced4: w + l > 299,
+						experienced5: w + l > 499,
+						onfire1: w / (w + l) > 0.52,
+						onfire2: w / (w + l) > 0.54,
+						onfire3: w / (w + l) > 0.56,
+						onfire4: w / (w + l) > 0.58,
+						onfire5: w / (w + l) > 0.6,
+						onfire6: w / (w + l) > 0.62,
+						onfire7: w / (w + l) > 0.64,
+						onfire8: w / (w + l) > 0.66,
+						onfire9: w / (w + l) > 0.68,
+						onfire10: w / (w + l) > 0.7
+				  })
 				: cn(defaultClass, gradeObj)
 			: defaultClass;
 	}
@@ -109,20 +117,17 @@ module.exports.PLAYERCOLORS = (user, isSeasonal, defaultClass, eloDisabled) => {
 module.exports.getBadWord = text => {
 	const badWords = {
 		// List of all blacklisted words and their variations.
-		nigger: ['nigga', 'nibba', 'nignog', 'n1bba', 'ni99a', 'n199a', 'nignug', 'bigga'],
-		kike: ['k1ke', 'kik3', 'k1k3'],
-		retard: ['autist', 'libtard', 'retard', 'tard'],
+		nigger: ['nigga', 'nibba', 'nignog', 'n1bba', 'ni99a', 'n199a', 'nignug', 'bigga', 'nigg', 'niggre', 'n1gger'],
+		retard: ['libtard', 'retard', 'tard', 'ret4rd', 't4rd', 'retrd'],
 		faggot: ['fag', 'f4gg0t', 'f4ggot', 'fagg0t', 'f4g'],
-		mongoloid: ['mong', 'm0ng'],
-		cunt: ['kunt'],
 		'Nazi Terms': ['1488', '卍', 'swastika']
 	};
-	const exceptions = [/(i|o)f (a|4) g/gi, /underclaim on gov/gi, /big ga(e|m|y)/gi, /among/gi, /mongodb/gi, /mongolia/gi]; // This list for all exceptions to bypass swear filter
+	const exceptions = [/(i|o)f (a|4) g/gi, /underclaim on gov/gi, /bastard/gi, /big ga/gi, /among/gi, /mongod/gi, /mongolia/gi, /off again/gi, /pokemon game/gi]; // This list for all exceptions to bypass swear filter
 	let foundWord = [null, null]; // Future found bad word, in format of: [blacklisted word, variation]
 
 	// let ec = 0; //for future use in auto reporting
 	let exceptedText = text;
-	for (let exception of exceptions) {
+	for (const exception of exceptions) {
 		while (exceptedText.search(exception) > -1) {
 			exceptedText = exceptedText.replace(exception, '');
 			// ec++;
@@ -156,4 +161,12 @@ module.exports.getBadWord = text => {
 		});
 	});*/
 	return foundWord;
+};
+
+module.exports.DEFAULTTHEMECOLORS = {
+	primaryColor: 'hsl(225, 73%, 57%)',
+	secondaryColor: 'hsl(225, 48%, 57%)',
+	tertiaryColor: 'hsl(265, 73%, 57%)',
+	baseBackgroundColor: 'hsl(0, 0%, 0%)',
+	baseTextColor: 'hsl(0, 0%, 100%)'
 };

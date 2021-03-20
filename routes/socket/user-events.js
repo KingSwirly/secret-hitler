@@ -4,13 +4,17 @@ const {
 	userListEmitter,
 	generalChats,
 	accountCreationDisabled,
+	bypassVPNCheck,
 	ipbansNotEnforced,
 	gameCreationDisabled,
 	limitNewPlayers,
 	currentSeasonNumber,
 	newStaff,
 	createNewBypass,
-	testIP
+	testIP,
+	emoteList,
+	setLastGenchatModPingAsync,
+	getLastGenchatModPingAsync
 } = require('./models');
 const { getModInfo, sendGameList, sendUserList, updateUserStatus, sendGameInfo, sendUserReports, sendPlayerNotes } = require('./user-requests');
 const { selectVoting } = require('./game/election.js');
@@ -27,6 +31,7 @@ const { secureGame } = require('./util.js');
 // const crypto = require('crypto');
 const https = require('https');
 const _ = require('lodash');
+const moment = require('moment');
 const { sendInProgressGameUpdate, sendPlayerChatUpdate } = require('./util.js');
 const animals = require('../../utils/animals');
 const adjectives = require('../../utils/adjectives');
@@ -34,6 +39,9 @@ const { generateCombination } = require('gfycat-style-urls');
 const { obfIP } = require('./ip-obf');
 const { LEGALCHARACTERS } = require('../../src/frontend-scripts/node-constants');
 const { makeReport } = require('./report.js');
+const { chatReplacements } = require('./chatReplacements');
+const fs = require('fs');
+const generalChatReplTime = Array(chatReplacements.length + 1).fill(0);
 
 /**
  * @param {object} game - game to act on.
@@ -45,7 +53,7 @@ const displayWaitingForPlayers = game => {
 
 		return count === 1 ? `Waiting for ${count} more player..` : `Waiting for ${count} more players..`;
 	}
-	const includedPlayerCounts = _.range(game.general.minPlayersCount, game.general.maxPlayersCount).filter(
+	const includedPlayerCounts = _.range(game.general.minPlayersCount, game.general.maxPlayersCount + 1).filter(
 		value => !game.general.excludedPlayerCount.includes(value)
 	);
 
@@ -153,7 +161,7 @@ const startCountdown = game => {
 						.slice(0, game.publicPlayersState.length)
 						.map((animal, index) => `${_shuffledAdjectives[index].charAt(0).toUpperCase()}${_shuffledAdjectives[index].slice(1)} ${animal}`);
 				}
-
+				game.remakeData = game.publicPlayersState.map(player => ({ userName: player.userName, isRemaking: false, timesVoted: 0, remakeTime: 0 }));
 				startGame(game);
 			}
 		} else {
@@ -190,9 +198,7 @@ const checkStartConditions = game => {
 			!game.general.excludedPlayerCount.includes(game.publicPlayersState.length)) ||
 		(game.general.isTourny && game.general.tournyInfo.queuedPlayers.length === game.general.maxPlayersCount)
 	) {
-		game.remakeData = game.publicPlayersState.map(player => (
-			{ userName: player.userName, isRemaking: false, remakeTime: 0 })
-		);
+		game.remakeData = game.publicPlayersState.map(player => ({ userName: player.userName, isRemaking: false, timesVoted: 0, remakeTime: 0 }));
 		startCountdown(game);
 	} else if (!game.gameState.isStarted) {
 		game.general.status = displayWaitingForPlayers(game);
@@ -211,7 +217,10 @@ const playerLeavePretourny = (game, playerName) => {
 		return;
 	}
 
-	queuedPlayers.splice(queuedPlayers.findIndex(player => player.userName === playerName), 1);
+	queuedPlayers.splice(
+		queuedPlayers.findIndex(player => player.userName === playerName),
+		1
+	);
 
 	game.chats.push({
 		timestamp: new Date(),
@@ -266,7 +275,8 @@ const handleSocketDisconnect = socket => {
 				} else if (gameState.isTracksFlipped) {
 					publicPlayersState[playerIndex].connected = false;
 					publicPlayersState[playerIndex].leftGame = true;
-					if (game.remakeData && game.remakeData.find(player => player.userName === passport.user).isRemaking) {
+					const playerRemakeData = game.remakeData && game.remakeData.find(player => player.userName === passport.user);
+					if (playerRemakeData && playerRemakeData.isRemaking) {
 						const minimumRemakeVoteCount = game.general.playerCount - game.customGameSettings.fascistCount;
 						const remakePlayerCount = game.remakeData.filter(player => player.isRemaking).length;
 
@@ -351,9 +361,12 @@ const handleUserLeaveGame = (socket, game, data, passport) => {
 	const playerIndex = game.publicPlayersState.findIndex(player => player.userName === passport.user);
 
 	if (playerIndex > -1) {
-		if (game.remakeData && game.remakeData.find(player => player.userName === passport.user).isRemaking) {
+		const playerRemakeData = game.remakeData && game.remakeData.find(player => player.userName === passport.user);
+		if (playerRemakeData && playerRemakeData.isRemaking) {
 			// Count leaving the game as rescinded remake vote.
-			const minimumRemakeVoteCount = game.general.playerCount - game.customGameSettings.fascistCount;
+			const minimumRemakeVoteCount =
+				(game.customGameSettings.fascistCount && game.general.playerCount - game.customGameSettings.fascistCount) ||
+				Math.floor(game.general.playerCount / 2) + 2;
 			const remakePlayerCount = game.remakeData.filter(player => player.isRemaking).length;
 
 			if (!game.general.isRemade && game.general.isRemaking && remakePlayerCount <= minimumRemakeVoteCount) {
@@ -384,7 +397,10 @@ const handleUserLeaveGame = (socket, game, data, passport) => {
 			delete games[game.general.uid];
 		}
 		if (!game.gameState.isTracksFlipped) {
-			game.publicPlayersState.splice(game.publicPlayersState.findIndex(player => player.userName === passport.user), 1);
+			game.publicPlayersState.splice(
+				game.publicPlayersState.findIndex(player => player.userName === passport.user),
+				1
+			);
 			checkStartConditions(game);
 			io.sockets.in(game.general.uid).emit('gameUpdate', game);
 		}
@@ -447,6 +463,28 @@ module.exports.handleUpdatedPlayerNote = (socket, data) => {
 		}
 	});
 };
+
+/**
+ * @param {object} socket - user socket reference.
+ * @param {object} passport - socket authentication.
+ * @param {object} data - from socket emit.
+ */
+module.exports.handleUpdatedTheme = (socket, passport, data) => {
+	const fields = ['primaryColor', 'secondaryColor', 'tertiaryColor', 'backgroundColor', 'textColor'];
+
+	Account.findOne({ username: passport && passport.user }).then(account => {
+		if (!account) {
+			return;
+		}
+
+		for (const field of fields) {
+			if (data[field]) account[field] = data[field];
+		}
+
+		account.save();
+	});
+};
+
 /**
  * @param {object} socket - user socket reference.
  * @param {object} passport - socket authentication.
@@ -579,7 +617,7 @@ module.exports.handleAddNewGame = (socket, passport, data) => {
 		return;
 	}
 
-	let excludes = [];
+	const excludes = [];
 	for (a = playerCounts[0]; a <= playerCounts[playerCounts.length - 1]; a++) {
 		if (!playerCounts.includes(a)) excludes.push(a);
 	}
@@ -665,18 +703,26 @@ module.exports.handleAddNewGame = (socket, passport, data) => {
 			maxPlayersCount: playerCounts[playerCounts.length - 1],
 			status: `Waiting for ${playerCounts[0] - 1} more players..`,
 			experiencedMode: data.experiencedMode,
-			disableChat: data.disableChat,
+			playerChats:
+				data.playerChats === 'emotes' && ['casual', 'practice'].includes(data.gameType)
+					? 'emotes'
+					: data.playerChats === 'emotes'
+					? 'enabled'
+					: data.playerChats,
 			isVerifiedOnly: data.isVerifiedOnly,
-			disableObserver: data.disableObserver && !data.isTourny,
+			disableObserverLobby: data.disableObserverLobby,
+			disableObserver: data.disableObserverLobby || (data.disableObserver && !data.isTourny),
 			isTourny: false,
 			lastModPing: 0,
+			chatReplTime: Array(chatReplacements.length + 1).fill(0),
 			disableGamechat: data.disableGamechat,
 			rainbowgame: user.wins + user.losses > 49 ? data.rainbowgame : false,
 			blindMode: data.blindMode,
 			timedMode: typeof data.timedMode === 'number' && data.timedMode >= 2 && data.timedMode <= 6000 ? data.timedMode : false,
 			flappyMode: data.flappyMode,
 			flappyOnlyMode: data.flappyMode && data.flappyOnlyMode,
-			casualGame: typeof data.timedMode === 'number' && data.timedMode < 30 && !data.casualGame ? true : data.casualGame,
+			casualGame: data.casualGame || (typeof data.timedMode === 'number' && data.timedMode < 30) ? true : data.gameType === 'casual',
+			practiceGame: !(typeof data.timedMode === 'number' && data.timedMode < 30) && data.gameType === 'practice',
 			rebalance6p: data.rebalance6p,
 			rebalance7p: data.rebalance7p,
 			rebalance9p2f: data.rebalance9p2f,
@@ -820,6 +866,7 @@ module.exports.handleAddNewGame = (socket, passport, data) => {
 			unSeatedGameChats: [],
 			lock: {},
 			votesPeeked: false,
+			remakeVotesPeeked: false,
 			invIndex: -1,
 			hiddenInfoChat: [],
 			hiddenInfoSubscriptions: [],
@@ -873,18 +920,10 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 
 	const chat = (() => {
 		let text;
+		let validClaim = false;
 
 		switch (data.claim) {
 			case 'wasPresident':
-				text = [
-					{
-						text: 'President '
-					},
-					{
-						text: blindMode ? `${replacementNames[playerIndex]} {${playerIndex + 1}} ` : `${passport.user} {${playerIndex + 1}} `,
-						type: 'player'
-					}
-				];
 				switch (data.claimState) {
 					case 'rrr':
 						game.private.summary = game.private.summary.updateLog(
@@ -893,21 +932,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'RRR',
-								type: 'fascist'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'rrb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -915,25 +941,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'RR',
-								type: 'fascist'
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'rbb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -941,25 +950,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: 'BB',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'bbb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -967,33 +959,33 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'BBB',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 				}
+				if (validClaim) {
+					text = [
+						{
+							text: 'President '
+						},
+						{
+							text: blindMode ? `${replacementNames[playerIndex]} {${playerIndex + 1}} ` : `${passport.user} {${playerIndex + 1}} `,
+							type: 'player'
+						},
+						{
+							text: 'claims '
+						},
+						{
+							claim: data.claimState
+						},
+						{
+							text: '.'
+						}
+					];
+					return text;
+				}
+				return;
 
 			case 'wasChancellor':
-				text = [
-					{
-						text: 'Chancellor '
-					},
-					{
-						text: blindMode ? `${replacementNames[playerIndex]} {${playerIndex + 1}} ` : `${passport.user} {${playerIndex + 1}} `,
-						type: 'player'
-					}
-				];
 				switch (data.claimState) {
 					case 'rr':
 						game.private.summary = game.private.summary.updateLog(
@@ -1002,21 +994,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ chancellorId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'RR',
-								type: 'fascist'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'rb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1024,25 +1003,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ chancellorId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'bb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1050,22 +1012,32 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ chancellorId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims '
-							},
-							{
-								text: 'BB',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 				}
+
+				if (validClaim) {
+					text = [
+						{
+							text: 'Chancellor '
+						},
+						{
+							text: blindMode ? `${replacementNames[playerIndex]} {${playerIndex + 1}} ` : `${passport.user} {${playerIndex + 1}} `,
+							type: 'player'
+						},
+						{
+							text: 'claims '
+						},
+						{
+							claim: data.claimState
+						},
+						{
+							text: '.'
+						}
+					];
+					return text;
+				}
+				return;
 			case 'didSinglePolicyPeek':
 				if (data.claimState === 'liberal' || data.claimState === 'fascist') {
 					text = [
@@ -1090,15 +1062,6 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 					return text;
 				}
 			case 'didPolicyPeek':
-				text = [
-					{
-						text: 'President '
-					},
-					{
-						text: blindMode ? `${replacementNames[playerIndex]} {${playerIndex + 1}} ` : `${passport.user} {${playerIndex + 1}} `,
-						type: 'player'
-					}
-				];
 				switch (data.claimState) {
 					case 'rrr':
 						game.private.summary = game.private.summary.updateLog(
@@ -1107,21 +1070,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'RRR',
-								type: 'fascist'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'rbr':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1129,29 +1079,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'brr':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1159,30 +1088,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'rrb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1190,30 +1097,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'rbb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1221,25 +1106,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: 'BB',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'bbr':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1247,25 +1115,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'BB',
-								type: 'liberal'
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'brb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1273,29 +1124,8 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: 'R',
-								type: 'fascist'
-							},
-							{
-								text: 'B',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 					case 'bbb':
 						game.private.summary = game.private.summary.updateLog(
 							{
@@ -1303,22 +1133,31 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 							},
 							{ presidentId: playerIndex }
 						);
-
-						text.push(
-							{
-								text: 'claims to have peeked at '
-							},
-							{
-								text: 'BBB',
-								type: 'liberal'
-							},
-							{
-								text: '.'
-							}
-						);
-
-						return text;
+						validClaim = true;
+						break;
 				}
+				if (validClaim) {
+					text = [
+						{
+							text: 'President '
+						},
+						{
+							text: blindMode ? `${replacementNames[playerIndex]} {${playerIndex + 1}} ` : `${passport.user} {${playerIndex + 1}} `,
+							type: 'player'
+						},
+						{
+							text: 'claims to have peeked at '
+						},
+						{
+							claim: data.claimState
+						},
+						{
+							text: '.'
+						}
+					];
+					return text;
+				}
+				return;
 			case 'didInvestigateLoyalty':
 				const { invIndex } = game.private;
 				if (invIndex != -1 && invIndex < game.private.seatedPlayers.length) {
@@ -1362,8 +1201,9 @@ module.exports.handleAddNewClaim = (socket, passport, game, data) => {
 					{
 						investigationClaim: data.claimState
 					},
-					{ presidentId: playerIndex }
+					{ investigatorId: playerIndex }
 				);
+
 				switch (data.claimState) {
 					case 'fascist':
 						text.push(
@@ -1437,6 +1277,7 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 
 	const remakeText = game.general.isTourny ? 'cancel' : 'remake';
 	const { remakeData, publicPlayersState } = game;
+	if (!remakeData) return;
 	const playerIndex = remakeData.findIndex(player => player.userName === passport.user);
 	const player = remakeData[playerIndex];
 	let chat;
@@ -1496,7 +1337,9 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 			previousElectedGovernment: [],
 			undrawnPolicyCount: 17,
 			discardedPolicyCount: 0,
-			presidentIndex: -1
+			presidentIndex: -1,
+			isCompleted: false,
+			timeCompleted: undefined
 		};
 
 		newGame.chats = [];
@@ -1556,15 +1399,21 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 		newGame.general.isRemaking = false;
 		newGame.general.isRecorded = false;
 		newGame.summarySaved = false;
-		newGame.general.uid = `${game.general.uid}Remake`;
+		if (game.general.uid.indexOf('Remake') === -1) {
+			newGame.general.uid = `${game.general.uid}Remake1`;
+		} else {
+			newGame.general.uid = `${game.general.uid.split('Remake')[0]}Remake${parseInt(game.general.uid.split('Remake')[1]) + 1}`;
+		}
 		newGame.general.electionCount = 0;
 		newGame.timeCreated = Date.now();
 		newGame.general.lastModPing = 0;
+		newGame.general.chatReplTime = Array(chatReplacements.length + 1).fill(0);
 		newGame.publicPlayersState = game.publicPlayersState
-			.filter(player => game.remakeData
-				.filter(rmkPlayer => rmkPlayer.isRemaking)
-				.map(rmkPlayer => rmkPlayer.userName)
-				.some(rmkPlayer => rmkPlayer === player.userName)
+			.filter(player =>
+				game.remakeData
+					.filter(rmkPlayer => rmkPlayer.isRemaking)
+					.map(rmkPlayer => rmkPlayer.userName)
+					.some(rmkPlayer => rmkPlayer === player.userName)
 			)
 			.map(player => ({
 				userName: player.userName,
@@ -1581,7 +1430,7 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 					cardBack: {}
 				}
 			}));
-		newGame.remakeStatus = [];
+		newGame.remakeData = [];
 		newGame.playersState = [];
 		newGame.cardFlingerState = [];
 		newGame.trackState = {
@@ -1693,6 +1542,7 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 
 	if (data.remakeStatus && Date.now() > player.remakeTime + 7000) {
 		player.isRemaking = true;
+		player.timesVoted++;
 		player.remakeTime = Date.now();
 
 		const remakePlayerCount = remakeData.filter(player => player.isRemaking).length;
@@ -1708,12 +1558,34 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 				if (game.general.remakeCount !== 0) {
 					game.general.status = `Game is ${game.general.isTourny ? 'cancelled ' : 'remade'} in ${game.general.remakeCount} ${
 						game.general.remakeCount === 1 ? 'second' : 'seconds'
-						}.`;
+					}.`;
 					game.general.remakeCount--;
 				} else {
 					clearInterval(game.private.remakeTimer);
 					game.general.status = `Game has been ${game.general.isTourny ? 'cancelled' : 'remade'}.`;
 					game.general.isRemade = true;
+
+					const remainingPoliciesChat = {
+						isRemainingPolicies: true,
+						timestamp: new Date(),
+						chat: [
+							{
+								text: 'The remaining policies are '
+							},
+							{
+								policies: game.private.policies.map(policyName => (policyName === 'liberal' ? 'b' : 'r'))
+							},
+							{
+								text: '.'
+							}
+						]
+					};
+
+					game.private.unSeatedGameChats.push(remainingPoliciesChat);
+					game.private.seatedPlayers.forEach(player => {
+						player.gameChats.push(remainingPoliciesChat);
+					});
+
 					if (game.general.isTourny) {
 						cancellTourny(game.general.uid);
 					} else {
@@ -1737,7 +1609,7 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
 		chat.chat.push({
 			text: ` has rescinded their vote to ${
 				game.general.isTourny ? 'cancel this tournament.' : 'remake this game.'
-				} (${remakePlayerCount}/${minimumRemakeVoteCount})`
+			} (${remakePlayerCount}/${minimumRemakeVoteCount})`
 		});
 	} else {
 		return;
@@ -1756,15 +1628,16 @@ module.exports.handleUpdatedRemakeGame = (passport, game, data, socket) => {
  * @param {array} editorUserNames - list of editors
  * @param {array} adminUserNames - list of admins
  * @param {function} addNewClaim - links to handleAddNewClaim
+ * @param {boolean} isTourneyMod - self explain
  */
-module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserNames, editorUserNames, adminUserNames, addNewClaim) => {
+module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserNames, editorUserNames, adminUserNames, addNewClaim, isTourneyMod) => {
 	// Authentication Assured in routes.js
 	if (!game || !game.general || !data.chat) return;
 	const chat = data.chat.trim();
 	const staffUserNames = [...modUserNames, ...editorUserNames, ...adminUserNames];
 	const playerIndex = game.publicPlayersState.findIndex(player => player.userName === passport.user);
 
-	if (chat.length > 300 || !chat.length) {
+	if (chat.length > 300 || !chat.length || /^(\*|(\*|~|_){2,4})$/i.exec(data.chat)) {
 		return;
 	}
 
@@ -1779,11 +1652,11 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 	const AEM = staffUserNames.includes(passport.user) || newStaff.modUserNames.includes(passport.user) || newStaff.editorUserNames.includes(passport.user);
 
 	// if (!AEM && game.general.disableChat) return;
-	if (!(AEM && playerIndex === -1)) {
-		if (game.general.disableChat && !game.gameState.isCompleted && game.gameState.isStarted && playerIndex !== -1) {
+	if (!((AEM || (isTourneyMod && game.general.unlisted)) && playerIndex === -1)) {
+		if (game.gameState.isStarted && !game.gameState.isCompleted && game.general.disableObserver && playerIndex === -1) {
 			return;
 		}
-		if (game.general.disableObserver && playerIndex === -1) {
+		if ((!game.gameState.isStarted || game.gameState.isCompleted) && game.general.disableObserverLobby && playerIndex === -1) {
 			return;
 		}
 	}
@@ -1875,7 +1748,7 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 		}
 	}
 
-	if (!AEM) {
+	if (!(AEM || (isTourneyMod && game.general.unlisted))) {
 		if (player) {
 			if ((player.isDead && !game.gameState.isCompleted) || player.leftGame) {
 				return;
@@ -1884,7 +1757,13 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 			if (game.general.private && !game.general.whitelistedPlayers.includes(passport.user)) {
 				return;
 			}
-			if (game.general.disableObserver || user.wins + user.losses < 11) {
+			if (user.wins + user.losses < 10) {
+				return;
+			}
+			if (game.gameState.isStarted && !game.gameState.isCompleted && game.general.disableObserver) {
+				return;
+			}
+			if ((!game.gameState.isStarted || game.gameState.isCompleted) && game.general.disableObserverLobby) {
 				return;
 			}
 		}
@@ -1894,26 +1773,28 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 
 	if (
 		player &&
-		((gameState.phase === 'presidentSelectingPolicy' || gameState.phase === 'chancellorSelectingPolicy') &&
-			(publicPlayersState.find(play => play.userName === player.userName).governmentStatus === 'isPresident' ||
-				publicPlayersState.find(play => play.userName === player.userName).governmentStatus === 'isChancellor'))
+		(gameState.phase === 'presidentSelectingPolicy' || gameState.phase === 'chancellorSelectingPolicy') &&
+		(publicPlayersState.find(play => play.userName === player.userName).governmentStatus === 'isPresident' ||
+			publicPlayersState.find(play => play.userName === player.userName).governmentStatus === 'isChancellor')
 	) {
 		return;
 	}
 
 	data.timestamp = new Date();
 	if (AEM) {
+		const { blindMode, replacementNames } = game.general;
+
 		const aemRigdeck = /^\/forcerigdeck (.*)$/i.exec(chat);
 		if (aemRigdeck) {
 			if (game && game.private) {
-				let deck = aemRigdeck[0].split(' ')[1];
+				const deck = aemRigdeck[0].split(' ')[1];
 				if (/^([RB]{1,27})$/i.exec(deck)) {
 					if (deck.length > 27 || deck.length === 0) {
 						socket.emit('sendAlert', 'This deck is too big (or too small).');
 						return;
 					}
 
-					let changedChat = [
+					const changedChat = [
 						{
 							text: 'An AEM member has changed the deck to '
 						}
@@ -1969,12 +1850,18 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 					socket.emit('sendAlert', `There is no seat {${affectedPlayerNumber + 1}}.`);
 					return;
 				}
-				if (affectedPlayer.voteStatus.hasVoted) {
-					socket.emit('sendAlert', `${affectedPlayer.userName} {${affectedPlayerNumber + 1}} has already voted.`);
-					return;
-				}
 				let vote = false;
 				if (voteString == 'ya' || voteString == 'ja' || voteString == 'yes' || voteString == 'true') vote = true;
+
+				if (affectedPlayer.voteStatus.hasVoted) {
+					socket.emit(
+						'sendAlert',
+						`${affectedPlayer.userName} {${affectedPlayerNumber + 1}} has already voted.\nThey were voting: ${
+							affectedPlayer.voteStatus.didVoteYes ? 'ja' : 'nein'
+						}\nYou have set them to vote: ${vote ? 'ja' : 'nein'}
+						`
+					);
+				}
 
 				game.chats.push({
 					gameChat: true,
@@ -1982,6 +1869,29 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 					chat: [
 						{
 							text: 'An AEM member has forced '
+						},
+						{
+							text: blindMode
+								? `${replacementNames[affectedPlayerNumber]} {${affectedPlayerNumber + 1}} `
+								: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
+							type: 'player'
+						},
+						{
+							text: ' to vote.'
+						}
+					]
+				});
+
+				const modOnlyChat = {
+					timestamp: new Date(),
+					gameChat: true,
+					chat: [
+						{
+							text: `${passport.user}`,
+							type: 'player'
+						},
+						{
+							text: ' has forced '
 						},
 						{
 							text: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
@@ -1995,10 +1905,23 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 							type: 'player'
 						},
 						{
-							text: '.'
+							text: ', '
+						},
+						{
+							text: `${affectedPlayer.userName}`,
+							type: 'player'
+						},
+						{
+							text: `${affectedPlayer.voteStatus.hasVoted ? ' had originally voted ' : ' had not voted.'}`
+						},
+						{
+							text: `${affectedPlayer.voteStatus.hasVoted ? (affectedPlayer.voteStatus.didVoteYes ? ' ja' : ' nein') : ''}`,
+							type: 'player'
 						}
 					]
-				});
+				};
+				game.private.hiddenInfoChat.push(modOnlyChat);
+
 				selectVoting({ user: affectedPlayer.userName }, game, { vote }, null, true);
 				sendPlayerChatUpdate(game, data);
 				sendInProgressGameUpdate(game, false);
@@ -2030,7 +1953,7 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 					return;
 				}
 				let chancellor = -1;
-				let currentPlayers = [];
+				const currentPlayers = [];
 				for (let i = 0; i < game.private.seatedPlayers.length; i++) {
 					currentPlayers[i] = !(
 						game.private.seatedPlayers[i].isDead ||
@@ -2058,7 +1981,9 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 							text: 'An AEM member has force skipped the government with '
 						},
 						{
-							text: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
+							text: blindMode
+								? `${replacementNames[affectedPlayerNumber]} {${affectedPlayerNumber + 1}} `
+								: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
 							type: 'player'
 						},
 						{
@@ -2068,7 +1993,7 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 				});
 				selectChancellor(null, { user: affectedPlayer.userName }, game, { chancellorIndex: chancellor }, true);
 				setTimeout(() => {
-					for (let p of game.private.seatedPlayers.filter(player => !player.isDead)) {
+					for (const p of game.private.seatedPlayers.filter(player => !player.isDead)) {
 						selectVoting({ user: p.userName }, game, { vote: false }, null, true);
 					}
 				}, 1000);
@@ -2125,14 +2050,16 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 							text: 'An AEM member has forced '
 						},
 						{
-							text: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
+							text: blindMode
+								? `${replacementNames[affectedPlayerNumber]} {${affectedPlayerNumber + 1}} `
+								: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
 							type: 'player'
 						},
 						{
 							text: ' to pick '
 						},
 						{
-							text: `${affectedChancellor.userName} {${chancellorPick}}`,
+							text: blindMode ? `${replacementNames[chancellorPick - 1]} {${chancellorPick}} ` : `${affectedChancellor.userName} {${chancellorPick}}`,
 							type: 'player'
 						},
 						{
@@ -2175,7 +2102,9 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 							text: 'An AEM member has pinged '
 						},
 						{
-							text: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
+							text: blindMode
+								? `${replacementNames[affectedPlayerNumber]} {${affectedPlayerNumber + 1}} `
+								: `${affectedPlayer.userName} {${affectedPlayerNumber + 1}}`,
 							type: 'player'
 						},
 						{
@@ -2210,35 +2139,61 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 
 	const pingMods = /^@(mod|moderator|editor|aem|mods) (.*)$/i.exec(chat);
 
-	if (
-		pingMods &&
-		player
-	) {
+	if (pingMods && player) {
 		if (!game.lastModPing || Date.now() > game.lastModPing + 180000) {
-			game.chats.push({
-				gameChat: true,
-				timestamp: new Date(),
-				chat: [
-					{
-						text: 'Player '
-					},
-					{
-						text: `${passport.user}`,
-						type: 'player'
-					},
-					{
-						text: ` has pinged a member of AEM with the message: "${pingMods[2]}".`
-					}
-				]
-			});
 			game.lastModPing = Date.now();
-			sendPlayerChatUpdate(game, data);
 			sendInProgressGameUpdate(game, false);
-			makeReport({ player: passport.user, situation: `"${pingMods[2]}".`, election: game.general.electionCount, title: game.general.name, uid: game.general.uid, gameType: game.general.casualGame ? 'Casual' : 'Ranked' }, game, 'ping');
+			makeReport(
+				{
+					player: passport.user,
+					situation: `"${pingMods[2]}".`,
+					election: game.general.electionCount,
+					title: game.general.name,
+					uid: game.general.uid,
+					gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+				},
+				game,
+				'ping'
+			);
 		} else {
 			socket.emit('sendAlert', `You can't ping mods for another ${(game.lastModPing + 180000 - Date.now()) / 1000} seconds.`);
 		}
 		return;
+	}
+
+	for (repl of chatReplacements) {
+		const replace = repl.regex.exec(chat);
+		if (replace) {
+			if (AEM) {
+				if (game.general.chatReplTime[repl.id] === 0 || Date.now() > game.general.chatReplTime[repl.id] + repl.aemCooldown * 1000) {
+					data.chat = repl.replacement;
+					game.general.chatReplTime[repl.id] = game.general.chatReplTime[0] = Date.now();
+				} else {
+					socket.emit(
+						'sendAlert',
+						`You can do this command again in ${((game.general.chatReplTime[repl.id] + repl.aemCooldown * 1000 - Date.now()) / 1000).toFixed(2)} seconds.`
+					);
+					return;
+				}
+			} else if (user.wins + user.losses > repl.normalGames) {
+				if (
+					Date.now() > game.general.chatReplTime[0] + 30000 &&
+					(game.general.chatReplTime[repl.id] === 0 || Date.now() > game.general.chatReplTime[repl.id] + repl.normalCooldown * 1000)
+				) {
+					data.chat = repl.replacement;
+					game.general.chatReplTime[repl.id] = game.general.chatReplTime[0] = Date.now();
+				} else {
+					socket.emit(
+						'sendAlert',
+						`You can't do this right now, try again in ${Math.max(
+							(game.general.chatReplTime[0] + 30000 - Date.now()) / 1000,
+							(game.general.chatReplTime[repl.id] + repl.normalCooldown * 1000 - Date.now()) / 1000
+						).toFixed(2)} seconds.`
+					);
+					return;
+				}
+			}
+		}
 	}
 
 	const pinged = /^Ping(\d{1,2})/i.exec(chat);
@@ -2264,24 +2219,45 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 			}
 			io.sockets.sockets[affectedSocketId].emit(
 				'pingPlayer',
-				game.general.blindMode ? 'Secret Hitler IO: A player has pinged you.' : `Secret Hitler IO: Player ${data.userName} just pinged you.`
+				game.general.blindMode || game.general.playerChats === 'disabled'
+					? 'Secret Hitler IO: A player has pinged you.'
+					: `Secret Hitler IO: Player ${data.userName} just pinged you.`
 			);
 
-			game.chats.push({
-				gameChat: true,
-				userName: passport.user,
-				timestamp: new Date(),
-				chat: [
-					{
-						text: game.general.blindMode
-							? `A player has pinged player number ${affectedPlayerNumber + 1}.`
-							: `${passport.user} has pinged ${publicPlayersState[affectedPlayerNumber].userName} (${affectedPlayerNumber + 1}).`
-					}
-				],
-				previousSeasonAward: user.previousSeasonAward,
-				uid: data.uid,
-				inProgress: game.gameState.isStarted
-			});
+			if (game.general.playerChats === 'disabled') {
+				game.private.seatedPlayers
+					.find(x => x.userName === player.userName)
+					.gameChats.push({
+						timestamp: new Date(),
+						gameChat: true,
+						chat: [
+							{ text: `${publicPlayersState[affectedPlayerNumber].userName} (${affectedPlayerNumber + 1})`, type: 'player' },
+							{ text: ' has been successfully pinged.' }
+						]
+					});
+				game.private.hiddenInfoChat.push({
+					timestamp: new Date(),
+					gameChat: true,
+					chat: [{ text: `${player.userName} has pinged ${game.publicPlayersState[affectedPlayerNumber].userName}.` }]
+				});
+			} else {
+				game.chats.push({
+					gameChat: true,
+					userName: passport.user,
+					timestamp: new Date(),
+					chat: [
+						{
+							text: game.general.blindMode
+								? `A player has pinged player number ${affectedPlayerNumber + 1}.`
+								: `${passport.user} has pinged ${publicPlayersState[affectedPlayerNumber].userName} (${affectedPlayerNumber + 1}).`
+						}
+					],
+					previousSeasonAward: user.previousSeasonAward,
+					uid: data.uid,
+					inProgress: game.gameState.isStarted
+				});
+			}
+
 			sendInProgressGameUpdate(game);
 		} catch (e) {
 			console.log(e, 'caught exception in ping chat');
@@ -2297,12 +2273,12 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 			);
 
 		if (lastMessage.chat) {
-			let leniancy; // How much time (in seconds) must pass before allowing the message.
-			if (lastMessage.chat.toLowerCase() === data.chat.toLowerCase()) leniancy = 1.5;
-			else leniancy = 0.25;
+			let leniency; // How much time (in seconds) must pass before allowing the message.
+			if (lastMessage.chat.toLowerCase() === data.chat.toLowerCase()) leniency = 1.5;
+			else leniency = 0.25;
 
 			const timeSince = data.timestamp - lastMessage.timestamp;
-			if (timeSince < leniancy * 1000) return; // Prior chat was too recent.
+			if (!AEM && timeSince < leniency * 1000) return; // Prior chat was too recent.
 		}
 
 		data.staffRole = (() => {
@@ -2319,6 +2295,39 @@ module.exports.handleAddNewGameChat = (socket, passport, data, game, modUserName
 			data.staffRole = 'moderator';
 			data.userName = 'Incognito';
 		}
+
+		// Attempts to cut down on overloading server resources
+		if (game.general.private && game.chats.length >= 30) {
+			game.chats = game.chats.slice(game.chats.length - 30, game.chats.length);
+		}
+
+		if (!game.gameState.isCompleted && game.gameState.isStarted) {
+			if (game.general.playerChats === 'emotes' && !(AEM && playerIndex === -1)) {
+				// emote games
+				if (!emoteList || !data.chat) return;
+				let newChatSplit = data.chat.toLowerCase().split(/(:[a-z]*?:)/g);
+				const emotes = Object.keys(emoteList);
+
+				// filter valid in-game :emotes: and numbers
+				newChatSplit = newChatSplit.map(block => {
+					if (block.length <= 2 || !block.startsWith(':') || !block.endsWith(':')) {
+						return block.replace(/[^0-9]/g, '');
+					}
+					if (emotes.includes(block)) {
+						return ` ${block} `;
+					}
+				});
+
+				const newChat = newChatSplit.join('');
+				if (!newChat.length) return;
+				data.chat = newChat;
+			} else if (game.general.playerChats === 'disabled' && !game.gameState.isCompleted && game.gameState.isStarted && playerIndex !== -1) {
+				// silent games
+				socket.emit('sendAlert', 'Player chats are disabled in this game.');
+				return;
+			}
+		}
+
 		game.chats.push(data);
 
 		if (game.gameState.isTracksFlipped) {
@@ -2354,13 +2363,15 @@ module.exports.handleUpdateWhitelist = (passport, game, data) => {
  * @param {array} editorUserNames - list of editors
  * @param {array} adminUserNames - list of admins
  */
-module.exports.handleNewGeneralChat = (socket, passport, data, modUserNames, editorUserNames, adminUserNames) => {
+module.exports.handleNewGeneralChat = async (socket, passport, data, modUserNames, editorUserNames, adminUserNames) => {
 	const user = userList.find(u => u.userName === passport.user);
 	if (!user || user.isPrivate) return;
 
 	if (!data.chat) return;
-	data.chat = data.chat.trim();
-	if (data.chat.length > 300 || !data.chat.length) return;
+	const chat = (data.chat = data.chat.trim());
+	if (data.chat.length > 300 || !data.chat.length || /^(\*|(\*|~|_){2,4})$/i.exec(data.chat)) return;
+
+	const AEM = user.staffRole && user.staffRole !== 'altmod' && user.staffRole !== 'trialmod' && user.staffRole !== 'veteran';
 
 	const curTime = new Date();
 	const lastMessage = generalChats.list
@@ -2372,16 +2383,76 @@ module.exports.handleNewGeneralChat = (socket, passport, data, modUserNames, edi
 			{ time: new Date(0) }
 		);
 
-	if (lastMessage.chat) {
-		let leniancy; // How much time (in seconds) must pass before allowing the message.
-		if (lastMessage.chat.toLowerCase() === data.chat.toLowerCase()) leniancy = 3;
-		else leniancy = 0.5;
+	const pingMods = /^@(mod|moderator|editor|aem|mods) (.*)$/i.exec(data.chat);
 
-		const timeSince = curTime - lastMessage.time;
-		if (timeSince < leniancy * 1000) return; // Prior chat was too recent.
+	if (pingMods) {
+		try {
+			const lastModPing = await getLastGenchatModPingAsync();
+			if (!lastModPing || Date.now() > lastModPing + 180000) {
+				makeReport(
+					{
+						player: passport.user,
+						situation: `"${pingMods[2]}".`,
+						homepage: true
+					},
+					null,
+					'ping'
+				);
+				await setLastGenchatModPingAsync(Date.now());
+			} else {
+				socket.emit('sendAlert', `You can't ping mods for another ${(lastModPing + 180000 - Date.now()) / 1000} seconds.`);
+			}
+		} catch (err) {
+			console.error(err);
+		}
+		return;
 	}
 
-	if (user.wins + user.losses >= 10) {
+	if (lastMessage.chat) {
+		let leniency; // How much time (in seconds) must pass before allowing the message.
+		if (lastMessage.chat.toLowerCase() === data.chat.toLowerCase()) leniency = 3;
+		else leniency = 0.5;
+
+		const timeSince = curTime - lastMessage.time;
+		if (timeSince < leniency * 1000) return; // Prior chat was too recent.
+	}
+
+	for (repl of chatReplacements) {
+		const replace = repl.regex.exec(chat);
+		if (replace) {
+			if (AEM) {
+				if (generalChatReplTime[repl.id] === 0 || Date.now() > generalChatReplTime[repl.id] + repl.aemCooldown * 1000) {
+					data.chat = repl.replacement;
+					generalChatReplTime[repl.id] = generalChatReplTime[0] = Date.now();
+				} else {
+					socket.emit(
+						'sendAlert',
+						`You can do this command again in ${((generalChatReplTime[repl.id] + repl.aemCooldown * 1000 - Date.now()) / 1000).toFixed(2)} seconds.`
+					);
+					return;
+				}
+			} else if (user.wins + user.losses > repl.normalGames) {
+				if (
+					Date.now() > generalChatReplTime[0] + 30000 &&
+					(generalChatReplTime[repl.id] === 0 || Date.now() > generalChatReplTime[repl.id] + repl.normalCooldown * 1000)
+				) {
+					data.chat = repl.replacement;
+					generalChatReplTime[repl.id] = generalChatReplTime[0] = Date.now();
+				} else {
+					socket.emit(
+						'sendAlert',
+						`You can't do this right now, try again in ${Math.max(
+							(generalChatReplTime[0] + 30000 - Date.now()) / 1000,
+							(generalChatReplTime[repl.id] + repl.normalCooldown * 1000 - Date.now()) / 1000
+						).toFixed(2)} seconds.`
+					);
+					return;
+				}
+			}
+		}
+	}
+
+	if (user.wins + user.losses >= 10 || process.env.NODE_ENV !== 'production') {
 		const getStaffRole = () => {
 			if (modUserNames.includes(passport.user) || newStaff.modUserNames.includes(passport.user)) {
 				return 'moderator';
@@ -2426,18 +2497,36 @@ module.exports.handleUpdatedGameSettings = (socket, passport, data) => {
 		.then(account => {
 			const currentPrivate = account.gameSettings.isPrivate;
 			const userIdx = userList.findIndex(user => user.userName === passport.user);
-
+			const aem = account.staffRole && (account.staffRole === 'moderator' || account.staffRole === 'editor' || account.staffRole === 'admin');
+			const veteran = account.staffRole && account.staffRole === 'veteran';
 			for (const setting in data) {
+				if (setting == 'blacklist') {
+					data[setting].splice(0, data[setting].length - 30);
+				}
+
+				const restrictedSettings = [
+					'blacklist',
+					'staffDisableVisibleElo',
+					'staffDisableStaffColor',
+					'staffIncognito',
+					'newReport',
+					'previousSeasonAward',
+					'specialTournamentStatus',
+					'ignoreIPBans',
+					'tournyWins'
+				];
+
 				if (
-					setting !== 'blacklist' ||
+					!restrictedSettings.includes(setting) ||
 					(setting === 'blacklist' && data[setting].length <= 30) ||
-					(setting === 'staffDisableVisibleElo' && account.staffRole && account.staffRole !== 'altmod' && account.staffRole !== 'trialmod') ||
-					(setting === 'staffIncognito' && account.staffRole && account.staffRole !== 'altmod' && account.staffRole !== 'trialmod')
+					(setting === 'staffDisableVisibleElo' && (aem || veteran)) ||
+					(setting === 'staffIncognito' && aem) ||
+					(setting === 'staffDisableStaffColor' && (aem || veteran))
 				) {
 					account.gameSettings[setting] = data[setting];
 				}
 
-				if (setting === 'staffIncognito' && account.staffRole && account.staffRole !== 'altmod' && account.staffRole !== 'trialmod') {
+				if (setting === 'staffIncognito' && aem) {
 					const userListInfo = {
 						userName: passport.user,
 						staffRole: account.staffRole || '',
@@ -2508,7 +2597,18 @@ module.exports.handleSubscribeModChat = (socket, passport, game) => {
 	if (game.private.hiddenInfoSubscriptions.includes(passport.user)) return;
 
 	if (game.private.hiddenInfoShouldNotify) {
-		makeReport({ player: passport.user, situation: `has subscribed to mod chat for a game without an auto-report.`, election: game.general.electionCount, title: game.general.name, uid: game.general.uid, gameType: game.general.casualGame ? 'Casual' : 'Ranked' }, game, 'modchat');
+		makeReport(
+			{
+				player: passport.user,
+				situation: `has subscribed to mod chat for a game without an auto-report.`,
+				election: game.general.electionCount,
+				title: game.general.name,
+				uid: game.general.uid,
+				gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+			},
+			game,
+			'modchat'
+		);
 		game.private.hiddenInfoShouldNotify = false;
 	}
 
@@ -2556,6 +2656,22 @@ module.exports.handleGameFreeze = (socket, passport, game, modUserName) => {
 		});
 		modaction.save();
 		game.private.gameFrozen = true;
+	} else {
+		ModAction.findOne({ userActedOn: game.general.uid, actionTaken: 'Game Freeze' })
+			.then(action => {
+				if (action.modNotes) {
+					if (action.modNotes.indexOf(passport.user) === -1) {
+						action.modNotes += passport.user + '\n';
+					}
+				} else {
+					action.modNotes = 'Subsequently frozen/unfrozen by:\n';
+					action.modNotes += passport.user + '\n';
+				}
+				action.save();
+			})
+			.catch(err => {
+				console.log(err, 'err in finding player report');
+			});
 	}
 
 	const now = new Date();
@@ -2589,7 +2705,7 @@ module.exports.handleGameFreeze = (socket, passport, game, modUserName) => {
  */
 module.exports.handleModPeekVotes = (socket, passport, game, modUserName) => {
 	const gameToPeek = game;
-	let output = '';
+	let output = '<table class="fullTable"><tr><th>Seat</th><th>Role</th><th>Vote</th></tr>';
 
 	if (gameToPeek && gameToPeek.private && gameToPeek.private.seatedPlayers) {
 		for (player of gameToPeek.private.seatedPlayers) {
@@ -2610,27 +2726,128 @@ module.exports.handleModPeekVotes = (socket, passport, game, modUserName) => {
 		});
 		modaction.save();
 		game.private.votesPeeked = true;
+	} else {
+		ModAction.findOne({ userActedOn: game.general.uid, actionTaken: 'Peek Votes' })
+			.then(action => {
+				if (action.modNotes) {
+					if (action.modNotes.indexOf(passport.user) === -1) {
+						action.modNotes += passport.user + '\n';
+					}
+				} else {
+					action.modNotes = 'Subsequently viewed by:\n';
+					action.modNotes += passport.user + '\n';
+				}
+				action.save();
+			})
+			.catch(err => {
+				console.log(err, 'err in finding player report');
+			});
 	}
 
 	if (gameToPeek && gameToPeek.private && gameToPeek.private.seatedPlayers) {
 		const playersToCheckVotes = gameToPeek.private.seatedPlayers;
 		playersToCheckVotes.map(player => {
-			output += 'Seat ' + (playersToCheckVotes.indexOf(player) + 1) + ' - ';
+			output += '<tr>';
+			output += '<td>' + (playersToCheckVotes.indexOf(player) + 1) + '</td>';
+			output += '<td>';
 			if (player && player.role && player.role.cardName) {
 				if (player.role.cardName === 'hitler') {
-					output += player.role.cardName.substring(0, 1).toUpperCase() + player.role.cardName.substring(1) + '   - ';
+					output += player.role.cardName.substring(0, 1).toUpperCase() + player.role.cardName.substring(1);
 				} else {
-					output += player.role.cardName.substring(0, 1).toUpperCase() + player.role.cardName.substring(1) + ' - ';
+					output += player.role.cardName.substring(0, 1).toUpperCase() + player.role.cardName.substring(1);
 				}
 			} else {
-				output += 'Roles not Dealt - ';
+				output += 'Roles not Dealt';
 			}
-			output += player.isDead ? 'Dead' : player.voteStatus && player.voteStatus.hasVoted ? (player.voteStatus.didVoteYes ? 'Ja' : 'Nein') : 'Not' + ' Voted';
-			output += '\n';
+			output +=
+				'</td><td>' +
+				(player.isDead ? 'Dead' : player.voteStatus && player.voteStatus.hasVoted ? (player.voteStatus.didVoteYes ? 'Ja' : 'Nein') : 'Not' + ' Voted') +
+				'</td>';
+			output += '</tr>';
 		});
 	}
+
+	output += '</table>';
 	socket.emit('sendAlert', output);
 };
+
+/**
+ * @param {object} socket - socket reference.
+ * @param {object} passport - socket authentication.
+ * @param {object} game - game reference.
+ * @param {string} modUserName - requesting Moderator's username
+ */
+module.exports.handleModPeekRemakes = (socket, passport, game, modUserName) => {
+	const gameToPeek = game;
+	let output =
+		'<table class="fullTable"><tr><th>Seat</th><th>Role</th><th>Time since last voted to remake</th><th>Currently voting to remake?</th><th>Times voted to remake</th></tr>';
+
+	if (gameToPeek && gameToPeek.private && gameToPeek.private.seatedPlayers) {
+		for (const player of gameToPeek.private.seatedPlayers) {
+			if (modUserName === player.userName) {
+				socket.emit('sendAlert', 'You cannot get votes to remake whilst playing.');
+				return;
+			}
+		}
+	}
+
+	if (!game.private.remakeVotesPeeked) {
+		const modaction = new ModAction({
+			date: new Date(),
+			modUserName: passport.user,
+			userActedOn: game.general.uid,
+			modNotes: '',
+			actionTaken: 'Get Remakes'
+		});
+		modaction.save();
+		game.private.remakeVotesPeeked = true;
+	} else {
+		ModAction.findOne({ userActedOn: game.general.uid, actionTaken: 'Get Remakes' })
+			.then(action => {
+				if (action.modNotes) {
+					if (action.modNotes.indexOf(passport.user) === -1) {
+						action.modNotes += passport.user + '\n';
+					}
+				} else {
+					action.modNotes = 'Subsequently viewed by:\n';
+					action.modNotes += passport.user + '\n';
+				}
+				action.save();
+			})
+			.catch(err => {
+				console.log(err, 'err in finding player report');
+			});
+	}
+
+	if (gameToPeek && gameToPeek.private && gameToPeek.private.seatedPlayers) {
+		const playersToCheckVotes = gameToPeek.private.seatedPlayers;
+		playersToCheckVotes.map(player => {
+			output += '<tr>';
+			output += '<td>' + (playersToCheckVotes.indexOf(player) + 1) + '</td>';
+			output += '<td>';
+			if (player && player.role && player.role.cardName) {
+				if (player.role.cardName === 'hitler') {
+					output += player.role.cardName.substring(0, 1).toUpperCase() + player.role.cardName.substring(1);
+				} else {
+					output += player.role.cardName.substring(0, 1).toUpperCase() + player.role.cardName.substring(1);
+				}
+			} else {
+				output += 'Roles not Dealt';
+			}
+
+			const playerRemakeData = game.remakeData.find(d => d.userName === player.userName);
+			output += '<td>' + (playerRemakeData.remakeTime ? moment.duration(new Date() - new Date(playerRemakeData.remakeTime)).humanize() : '-') + '</td>';
+			output += '<td>' + (playerRemakeData.isRemaking ? 'Yes' : 'No') + '</td>';
+			output += '<td>' + playerRemakeData.timesVoted + '</td>';
+			output += '</tr>';
+		});
+	}
+
+	output += '</table>';
+	socket.emit('sendAlert', output);
+};
+
+let lagTest = [];
 
 /**
  * @param {object} socket - socket reference.
@@ -2641,8 +2858,6 @@ module.exports.handleModPeekVotes = (socket, passport, game, modUserName) => {
  * @param {array} superModUserNames - list of usernames that are editors and admins
  */
 module.exports.handleModerationAction = (socket, passport, data, skipCheck, modUserNames, superModUserNames) => {
-	// Authentication Assured in routes.js
-
 	if (data.userName) {
 		data.userName = data.userName.trim();
 	}
@@ -2684,7 +2899,14 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 		}
 	}
 
-	if ((!data.ip || data.ip === '') && (data.action === 'timeOut' || data.action === 'ipban' || data.action === 'getIP' || data.action === 'clearTimeoutIP')) {
+	if (
+		(!data.ip || data.ip === '') &&
+		(data.action === 'timeOut' ||
+			data.action === 'ipban' ||
+			data.action === 'getIP' ||
+			data.action === 'clearTimeoutIP' ||
+			data.action === 'clearTimeoutAndTimeoutIP')
+	) {
 		// Failed to get a relevant IP, abort the action since it needs one.
 		socket.emit('sendAlert', 'That action requires a valid IP.');
 		return;
@@ -2747,6 +2969,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 				ip: data.ip,
 				actionTaken: typeof data.action === 'string' ? data.action : data.action.type
 			});
+
 			/**
 			 * @param {string} username - name of user.
 			 */
@@ -2792,6 +3015,14 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 			};
 
 			switch (data.action) {
+				case 'lagMeter':
+					lagTest.push(Date.now() - data.frontEndTime);
+
+					if (lagTest.length === 5) {
+						socket.emit('lagTestResults', (lagTest.reduce((acc, curr) => acc + curr, 0) / 5).toFixed(2));
+						lagTest = [];
+					}
+					return;
 				case 'clearTimeout':
 					Account.findOne({ username: data.userName })
 						.then(account => {
@@ -2815,51 +3046,68 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 						acknowledged: false
 					};
 
-					Account.findOne({ username: data.userName })
-						.then(user => {
-							if (user) {
-								if (user.warnings && user.warnings.length > 0) {
-									user.warnings.push(warning);
-								} else {
-									user.warnings = [warning];
-								}
-								user.save(() => {
-									if (io.sockets.sockets[affectedSocketId]) {
-										io.sockets.sockets[affectedSocketId].emit('checkRestrictions');
-									}
-								});
+					Account.findOne({ username: data.userName }).then(user => {
+						if (user) {
+							if (user.warnings && user.warnings.length > 0) {
+								user.warnings.push(warning);
 							} else {
-								socket.emit('sendAlert', 'That user doesn\'t exist');
-								return;
+								user.warnings = [warning];
 							}
-						});
+							user.save(() => {
+								if (io.sockets.sockets[affectedSocketId]) {
+									io.sockets.sockets[affectedSocketId].emit('checkRestrictions');
+								}
+							});
+						} else {
+							socket.emit('sendAlert', `That user doesn't exist`);
+							return;
+						}
+					});
 					break;
 				case 'removeWarning':
-					Account.findOne({ username: data.userName })
-						.then(user => {
-							if (user) {
-								if (user.warnings && user.warnings.length > 0) {
-									socket.emit('sendAlert', `Warning with the message: "${user.warnings.pop().text}" deleted.`);
-								} else {
-									socket.emit('sendAlert', 'That user doesn\'t have any warnings.');
-									return;
-								}
-								user.markModified('warnings');
-								user.save(() => {
-									if (io.sockets.sockets[affectedSocketId]) {
-										io.sockets.sockets[affectedSocketId].emit('checkRestrictions');
-									}
-								});
+					Account.findOne({ username: data.userName }).then(user => {
+						if (user) {
+							if (user.warnings && user.warnings.length > 0) {
+								socket.emit('sendAlert', `Warning with the message: "${user.warnings.pop().text}" deleted.`);
 							} else {
-								socket.emit('sendAlert', 'That user doesn\'t exist');
+								socket.emit('sendAlert', `That user doesn't have any warnings.`);
 								return;
 							}
-						});
+							user.markModified('warnings');
+							user.save(() => {
+								if (io.sockets.sockets[affectedSocketId]) {
+									io.sockets.sockets[affectedSocketId].emit('checkRestrictions');
+								}
+							});
+						} else {
+							socket.emit('sendAlert', `That user doesn't exist`);
+							return;
+						}
+					});
 					break;
 				case 'clearTimeoutIP':
 					BannedIP.remove({ ip: data.ip }, (err, res) => {
 						if (err) socket.emit('sendAlert', `IP clear failed:\n${err}`);
 					});
+					break;
+				case 'clearTimeoutAndTimeoutIP':
+					Account.findOne({ username: data.userName })
+						.then(account => {
+							if (account) {
+								account.isTimeout = new Date(0);
+								account.isBanned = false;
+								account.save();
+							} else {
+								socket.emit('sendAlert', `No account found with a matching username: ${data.userName}`);
+							}
+
+							BannedIP.remove({ ip: data.ip }, (err, res) => {
+								if (err) socket.emit('sendAlert', `IP clear failed:\n${err}`);
+							});
+						})
+						.catch(err => {
+							console.log(err, 'clearTimeout user err');
+						});
 					break;
 				case 'modEndGame':
 					const gameToEnd = games[data.uid];
@@ -2983,7 +3231,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 									}
 									success = false;
 									Profile.findOne({ _id: data.userName }).then(profile => {
-										let newProfile = JSON.parse(JSON.stringify(profile));
+										const newProfile = JSON.parse(JSON.stringify(profile));
 										newProfile._id = data.comment;
 										const renamedProfile = new Profile(newProfile);
 										renamedProfile.save();
@@ -2991,6 +3239,9 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 											success = true;
 										});
 									});
+
+									fs.copyFile(`public/images/custom-cardbacks/${data.userName}.png`, `public/images/custom-cardbacks/${data.comment}.png`, () => {});
+									fs.unlink(`public/images/custom-cardbacks/${data.userName}.png`, () => {});
 								});
 							}
 						});
@@ -3067,7 +3318,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 					});
 
 					ipban.save(() => {
-						Account.find({ lastConnectedIP: data.ip }, function (err, users) {
+						Account.find({ lastConnectedIP: data.ip }, function(err, users) {
 							if (users && users.length > 0) {
 								users.forEach(user => {
 									if (isSuperMod) {
@@ -3118,16 +3369,20 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 						ip: data.ip
 					});
 					timeout.save(() => {
-						Account.find({ lastConnectedIP: data.ip }, function (err, users) {
-							if (users && users.length > 0) {
-								users.forEach(user => {
-									user.isTimeout = new Date(Date.now() + 18 * 60 * 60 * 1000);
-									user.save(() => {
+						Account.findOne({ username: data.userName })
+							.then(account => {
+								if (account) {
+									account.isTimeout = new Date(Date.now() + 18 * 60 * 60 * 1000);
+									account.save(() => {
 										logOutUser(data.userName);
 									});
-								});
-							}
-						});
+								} else {
+									socket.emit('sendAlert', `No account found with a matching username: ${data.userName}`);
+								}
+							})
+							.catch(err => {
+								console.log(err, 'timeout user err');
+							});
 					});
 					break;
 				case 'timeOut2':
@@ -3153,13 +3408,20 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 						ip: data.ip
 					});
 					timeout3.save(() => {
-						Account.find({ lastConnectedIP: data.ip }, function (err, users) {
-							if (users && users.length > 0) {
-								users.forEach(user => {
-									logOutUser(user.username);
-								});
-							}
-						});
+						Account.findOne({ username: data.userName })
+							.then(account => {
+								if (account) {
+									account.isTimeout = new Date(Date.now() + 60 * 60 * 1000);
+									account.save(() => {
+										logOutUser(data.userName);
+									});
+								} else {
+									socket.emit('sendAlert', `No account found with a matching username: ${data.userName}`);
+								}
+							})
+							.catch(err => {
+								console.log(err, 'timeout3 user err');
+							});
 					});
 					break;
 				case 'timeOut4':
@@ -3254,7 +3516,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 
 					if (isSuperMod) {
 						ipbanl.save(() => {
-							Account.find({ lastConnectedIP: data.ip }, function (err, users) {
+							Account.find({ lastConnectedIP: data.ip }, function(err, users) {
 								if (users && users.length > 0) {
 									users.forEach(user => {
 										banAccount(user.username);
@@ -3305,6 +3567,12 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 				case 'enableAccountCreation':
 					accountCreationDisabled.status = false;
 					break;
+				case 'disableVPNCheck':
+					bypassVPNCheck.status = true;
+					break;
+				case 'enableVPNCheck':
+					bypassVPNCheck.status = false;
+					break;
 				case 'disableIpbans':
 					ipbansNotEnforced.status = true;
 					break;
@@ -3330,7 +3598,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 								if (account) {
 									account.isContributor = false;
 									account.save(() => {
-										let idx = newStaff.contributorUserNames.indexOf(account.username);
+										const idx = newStaff.contributorUserNames.indexOf(account.username);
 										if (idx != -1) newStaff.contributorUserNames.splice(idx, 1);
 										logOutUser(account.username);
 									});
@@ -3369,7 +3637,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 							});
 					}
 					break;
-				case 'promoteToContributor':
+				case 'toggleContributor':
 					if (isSuperMod) {
 						Account.findOne({ username: data.userName })
 							.then(account => {
@@ -3377,6 +3645,24 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 									account.isContributor = true;
 									account.save(() => {
 										newStaff.contributorUserNames.push(account.username);
+										logOutUser(account.username);
+									});
+								} else {
+									socket.emit('sendAlert', `No account found with a matching username: ${data.userName}`);
+								}
+							})
+							.catch(err => {
+								console.log(err);
+							});
+					}
+					break;
+				case 'toggleTourneyMod':
+					if (isSuperMod) {
+						Account.findOne({ username: data.userName })
+							.then(account => {
+								if (account) {
+									account.isTournamentMod = true;
+									account.save(() => {
 										logOutUser(account.username);
 									});
 								} else {
@@ -3464,6 +3750,24 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 							});
 					}
 					break;
+				case 'promoteToVeteran':
+					if (isSuperMod) {
+						Account.findOne({ username: data.userName })
+							.then(account => {
+								if (account) {
+									account.staffRole = 'veteran';
+									account.save(() => {
+										logOutUser(account.username);
+									});
+								} else {
+									socket.emit('sendAlert', `No account found with a matching username: ${data.userName}`);
+								}
+							})
+							.catch(err => {
+								console.log(err);
+							});
+					}
+					break;
 				case 'regatherAEMList':
 					if (!isSuperMod) {
 						socket.emit('sendAlert', 'Only editors and admins can refresh the AEM usernames list.');
@@ -3524,18 +3828,18 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 						const setType = /setRWins/.test(data.action.type)
 							? 'rainbowWins'
 							: /setRLosses/.test(data.action.type)
-								? 'rainbowLosses'
-								: /setWins/.test(data.action.type)
-									? 'wins'
-									: 'losses';
+							? 'rainbowLosses'
+							: /setWins/.test(data.action.type)
+							? 'wins'
+							: 'losses';
 						const number =
 							setType === 'wins'
 								? data.action.type.substr(7)
 								: setType === 'losses'
-									? data.action.type.substr(9)
-									: setType === 'rainbowWins'
-										? data.action.type.substr(8)
-										: data.action.type.substr(10);
+								? data.action.type.substr(9)
+								: setType === 'rainbowWins'
+								? data.action.type.substr(8)
+								: data.action.type.substr(10);
 						const isPlusOrMinus = number.charAt(0) === '+' || number.charAt(0) === '-';
 
 						if (!isNaN(parseInt(number, 10)) || isPlusOrMinus) {
@@ -3578,14 +3882,17 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 				ipban: '18 Hour IP Ban',
 				enableAccountCreation: 'Enable Account Creation',
 				disableAccountCreation: 'Disable Account Creation',
+				enableVPNCheck: 'Enable VPN Check',
+				disableVPNCheck: 'Disable VPN Check',
 				togglePrivate: 'Toggle Private (Permanent)',
 				togglePrivateEighteen: 'Toggle Private (Temporary)',
-				timeOut: 'Timeout 18 Hours (IP)',
+				timeOut: 'Timeout and IP Timeout 18 Hours',
 				timeOut2: 'Timeout 18 Hours',
-				timeOut3: 'Timeout 1 Hour (IP)',
+				timeOut3: 'Timeout and IP Timeout 1 Hour',
 				timeOut4: 'Timeout 6 Hours',
 				clearTimeout: 'Clear Timeout',
 				clearTimeoutIP: 'Clear IP Ban',
+				clearTimeoutAndTimeoutIP: 'Clear Timeout and IP Timeout',
 				modEndGame: 'End Game',
 				deleteGame: 'Delete Game',
 				enableIpBans: 'Enable IP Bans',
@@ -3602,13 +3909,14 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 				deleteBio: 'Delete Bio',
 				deleteProfile: 'Delete Profile',
 				deleteCardback: 'Delete Cardback',
-				removeContributor: 'Remove Contributor Role',
 				resetGameName: 'Reset Game Name',
 				rainbowUser: 'Grant Rainbow',
 				removeStaffRole: 'Remove Staff Role',
-				promoteToContributor: 'Promote (Contributor)',
+				toggleContributor: 'Add/Remove Role (Contributor)',
+				toggleTourneyMod: 'Add/Remove Role (Tourney Mod)',
 				promoteToAltMod: 'Promote (AEM Alt)',
 				promoteToTrialMod: 'Promote (Trial Mod)',
+				promoteToVeteran: 'Promote (Veteran AEM)',
 				promoteToMod: 'Promote (Mod)',
 				promoteToEditor: 'Promote (Editor)',
 				makeBypass: 'Create Bypass Key',
@@ -3619,7 +3927,7 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 
 			const modAction = JSON.stringify({
 				content: `Date: *${new Date()}*\nStaff member: **${modaction.modUserName}**\nAction: **${niceAction[modaction.actionTaken] ||
-					modaction.actionTaken}**\nUser: **${modaction.userActedOn}**\nComment: **${modaction.modNotes}**.`
+					modaction.actionTaken}**\nUser: **${modaction.userActedOn} **\nComment: **${modaction.modNotes}**.`
 			});
 
 			const modOptions = {
@@ -3637,8 +3945,9 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 					const modReq = https.request(modOptions);
 
 					modReq.end(modAction);
-				} catch (error) { }
+				} catch (error) {}
 			}
+
 			modaction.save();
 		}
 	}
@@ -3647,8 +3956,9 @@ module.exports.handleModerationAction = (socket, passport, data, skipCheck, modU
 /**
  * @param {object} passport - socket authentication.
  * @param {object} data - from socket emit.
+ * @param {object} callback - response function.
  */
-module.exports.handlePlayerReport = (passport, data) => {
+module.exports.handlePlayerReport = (passport, data, callback) => {
 	const user = userList.find(u => u.userName === passport.user);
 
 	if (data.userName !== 'from replay' && (!user || user.wins + user.losses < 2) && process.env.NODE_ENV === 'production') {
@@ -3667,6 +3977,7 @@ module.exports.handlePlayerReport = (passport, data) => {
 	});
 
 	if (!/^(afk\/leaving game|abusive chat|cheating|gamethrowing|stalling|botting|other)$/.exec(playerReport.reason)) {
+		callback({ success: false, error: 'Invalid report reason.' });
 		return;
 	}
 
@@ -3695,15 +4006,16 @@ module.exports.handlePlayerReport = (passport, data) => {
 	}
 
 	const httpEscapedComment = data.comment.replace(/( |^)(https?:\/\/\S+)( |$)/gm, '$1<$2>$3').replace(/@/g, '`@`');
-	const blindModeAnonymizedPlayer = games[data.uid].general.blindMode
-		? games[data.uid].gameState.isStarted
-			? `${data.reportedPlayer.split(' ')[0]} Anonymous`
-			: 'Anonymous'
-		: data.reportedPlayer;
+	const game = games[data.uid];
+	if (!game && data.uid) return;
+
+	const blindModeAnonymizedPlayer =
+		data.uid && game.general.blindMode ? (game.gameState.isStarted ? `${data.reportedPlayer.split(' ')[0]} Anonymous` : 'Anonymous') : data.reportedPlayer;
+
 	const body = JSON.stringify({
-		content: `Game UID: <https://secrethitler.io/game/#/table/${data.uid}>\nReported player: ${blindModeAnonymizedPlayer}\nReason: ${
-			playerReport.reason
-			}\nComment: ${httpEscapedComment}`
+		content: `${
+			data.uid ? `Game UID: <https://secrethitler.io/game/#/table/${data.uid}> (${playerReport.gameType})` : 'Report from homepage'
+		}\nReported player: ${blindModeAnonymizedPlayer}\nReason: ${playerReport.reason}\nComment: ${httpEscapedComment}`
 	});
 
 	const options = {
@@ -3716,31 +4028,33 @@ module.exports.handlePlayerReport = (passport, data) => {
 		}
 	};
 
-	const game = games[data.uid];
-
 	if (game) {
-		if (!game.reportCounts) game.reportCounts = {};
-		if (!game.reportCounts[passport.user]) game.reportCounts[passport.user] = 0;
-		if (game.reportCounts[passport.user] >= 4) {
+		if (!game.private.reportCounts) game.private.reportCounts = {};
+		if (!game.private.reportCounts[passport.user]) game.private.reportCounts[passport.user] = 0;
+		if (game.private.reportCounts[passport.user] >= 4) {
 			return;
 		}
-		game.reportCounts[passport.user]++;
+		game.private.reportCounts[passport.user]++;
 	}
+
+	let reportError = false;
 
 	try {
 		const req = https.request(options);
 		req.end(body);
 	} catch (error) {
 		console.log(error, 'Caught exception in player request https request to discord server');
+		reportError = true;
 	}
 
 	playerReport.save(err => {
 		if (err) {
 			console.log(err, 'Failed to save player report');
+			callback({ success: false, error: 'Error submitting report.' });
 			return;
 		}
 
-		Account.find({ staffRole: { $exists: true } }).then(accounts => {
+		Account.find({ staffRole: { $exists: true, $ne: 'veteran' } }).then(accounts => {
 			accounts.forEach(account => {
 				const onlineSocketId = Object.keys(io.sockets.sockets).find(
 					socketId =>
@@ -3755,11 +4069,19 @@ module.exports.handlePlayerReport = (passport, data) => {
 				account.save();
 			});
 		});
+
+		if (typeof callback === 'function') {
+			if (reportError) {
+				callback({ success: false, error: 'Error submitting report.' });
+			} else {
+				callback({ success: true });
+			}
+		}
 	});
 };
 
 module.exports.handlePlayerReportDismiss = () => {
-	Account.find({ staffRole: { $exists: true } }).then(accounts => {
+	Account.find({ staffRole: { $exists: true, $ne: 'veteran' } }).then(accounts => {
 		accounts.forEach(account => {
 			const onlineSocketId = Object.keys(io.sockets.sockets).find(
 				socketId => io.sockets.sockets[socketId].handshake.session.passport && io.sockets.sockets[socketId].handshake.session.passport.user === account.username
@@ -3805,7 +4127,8 @@ module.exports.checkUserStatus = (socket, callback) => {
 			socketID =>
 				sockets[socketID].handshake.session.passport &&
 				Object.keys(sockets[socketID].handshake.session.passport).length &&
-				(sockets[socketID].handshake.session.passport.user === user && socketID !== socket.id)
+				sockets[socketID].handshake.session.passport.user === user &&
+				socketID !== socket.id
 		);
 
 		if (oldSocketID && sockets[oldSocketID]) {
@@ -3837,7 +4160,7 @@ module.exports.checkUserStatus = (socket, callback) => {
 				// destroySession(username);
 			};
 
-			Account.findOne({ username: user }, function (err, account) {
+			Account.findOne({ username: user }, function(err, account) {
 				if (account) {
 					if (account.isBanned || (account.isTimeout && new Date() < account.isTimeout)) {
 						logOutUser(user);
@@ -3877,23 +4200,42 @@ module.exports.handleFlappyEvent = (data, game) => {
 
 	if (data.type === 'startFlappy') {
 		game.flappyState = {
+			controllingLibUser: '',
+			controllingFascistUser: '',
 			liberalScore: 0,
 			fascistScore: 0,
-			pylonDensity: 1,
-			flapDistance: 1.2
+			pylonDensity: 1.3,
+			flapDistance: 1,
+			pylonOffset: 1.3,
+			passedPylonCount: 0
 		};
 
 		game.general.status = 'FLAPPY HITLER: 0 - 0';
 		io.sockets.in(game.general.uid).emit('gameUpdate', game);
 
-		setInterval(() => {
-			const offset = Math.floor(Math.random() * 50);
+		game.flappyState.pylonGenerator = setInterval(() => {
+			const offset = Math.floor(Math.random() * 50 * game.flappyState.pylonOffset);
 			const newData = {
 				type: 'newPylon',
+				pylonType: 'normal',
 				offset
 			};
 
 			updateFlappyRoom(newData);
-		}, 1500);
+		}, 1500 * game.flappyState.pylonDensity);
+	}
+
+	if (data.type === 'collision') {
+		game.flappyState[`${data.team}Score`]++;
+		clearInterval(game.flappyState.pylonGenerator);
+		// game.general.status = 'FLAPPY HITLER: x - x';
+		// io.sockets.in(game.general.uid).emit('gameUpdate', game);
+	}
+
+	if (data.type === 'passedPylon') {
+		game.flappyState.passedPylonCount++;
+		game.general.status = `FLAPPY HITLER: ${game.flappyState.liberalScore} - ${game.flappyState.fascistScore} (${game.flappyState.passedPylonCount})`;
+
+		io.sockets.in(game.general.uid).emit('gameUpdate', game);
 	}
 };

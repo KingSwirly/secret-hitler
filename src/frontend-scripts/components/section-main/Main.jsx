@@ -1,4 +1,5 @@
 import React from 'react'; // eslint-disable-line
+import 'sweetalert2/src/sweetalert2.scss';
 import PropTypes from 'prop-types';
 import { Scrollbars } from 'react-custom-scrollbars';
 import { Modal, Header, Button, Icon } from 'semantic-ui-react';
@@ -33,7 +34,8 @@ export class Main extends React.Component {
 				casualgame: false
 			},
 			showNewPlayerModal: Boolean(window.hasNotDismissedSignupModal),
-			newPlayerModalPageIndex: 0
+			newPlayerModalPageIndex: 0,
+			stickyEnabled: true
 		};
 	}
 
@@ -49,9 +51,32 @@ export class Main extends React.Component {
 		}
 	}
 
+	componentDidUpdate(prevProps) {
+		if (Object.keys(prevProps.userList).length !== Object.keys(this.props.userList).length) {
+			const plausibleProps = {
+				Verified: this.props?.userInfo?.verified ? 'Yes' : 'No',
+				'User Type': this.props?.userInfo?.hasNotDismissedSignupModal ? 'New' : 'Returning',
+				'Entrance Node': this.props?.midSection,
+				'Player Count': (this.props?.userList?.list && this.props?.userList?.list.length) || -1,
+				'Game Count': this.props?.gameList.length,
+				'Chat Size': this.props?.userInfo?.gameSettings?.truncatedSize || 250,
+				'Elo View': this.props?.userInfo?.gameSettings?.disableSeasonal ? 'Overall' : 'Seasonal',
+				'Keyboard Shortcuts': this.props?.userInfo?.gameSettings?.keyboardShortcuts || 'disable',
+				'Claim Characters': this.props?.userInfo?.gameSettings?.claimCharacters || 'short',
+				'Staff Status': this.props?.userInfo?.staffRole ? 'Staff' : 'Non-Staff'
+			};
+
+			plausible('Main Load', { props: plausibleProps });
+		}
+	}
+
 	static getDerivedStateFromProps(props) {
 		return props.userInfo.gameSettings ? { gameFilter: props.userInfo.gameSettings.gameFilters } : null;
 	}
+
+	setStickyEnabled = enabled => {
+		this.setState({ stickyEnabled: enabled });
+	};
 
 	handleDismissSignupModal = () => {
 		this.setState({
@@ -177,7 +202,11 @@ export class Main extends React.Component {
 					})()}
 				</Modal.Content>
 				<Modal.Actions>
-					<Button onClick={this.handleDismissSignupModal} inverted style={{ background: newPlayerModalPageIndex === 4 ? '#db2828' : 'inherit' }}>
+					<Button
+						onClick={this.handleDismissSignupModal}
+						inverted
+						style={{ background: newPlayerModalPageIndex === 4 ? '#db2828' : 'var(--theme-tertiary)', color: '#fff' }}
+					>
 						<Icon name="checkmark" />
 						{newPlayerModalPageIndex === 4 ? 'Close' : 'Skip and dismiss forever'}
 					</Button>
@@ -251,7 +280,7 @@ export class Main extends React.Component {
 				case 'profile':
 					return <Profile userInfo={userInfo} socket={socket} userList={userList} />;
 				case 'replay':
-					return <Replay allEmotes={this.props.allEmotes} />;
+					return <Replay allEmotes={this.props.allEmotes} userList={userList} />;
 				case 'reports':
 					return <Reports socket={socket} userInfo={userInfo} />;
 				case 'leaderboards':
@@ -266,6 +295,10 @@ export class Main extends React.Component {
 							socket={socket}
 							changeGameFilter={changeGameFilter}
 							gameFilter={this.state.gameFilter}
+							generalChats={this.props.generalChats}
+							allEmotes={this.props.allEmotes}
+							stickyEnabled={this.state.stickyEnabled}
+							setStickyEnabled={this.setStickyEnabled}
 						/>
 					);
 			}
@@ -297,7 +330,7 @@ Main.propTypes = {
 	socket: PropTypes.object,
 	userList: PropTypes.object,
 	gameList: PropTypes.array,
-	allEmotes: PropTypes.array,
+	allEmotes: PropTypes.object,
 	onClickedTakeSeat: PropTypes.func,
 	onSeatingUser: PropTypes.func,
 	onLeaveGame: PropTypes.func

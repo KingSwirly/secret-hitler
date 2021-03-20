@@ -1,6 +1,6 @@
 .game-text {
 	.normal {
-		color: #8b8b8b;
+		color: var(--theme-text-3);
 	}
 
 	.liberal {
@@ -19,7 +19,31 @@
 	}
 
 	.player {
-		color: #eee;
+		color: var(--theme-text-2);
 		font-weight: 700;
 	}
+}
+
+.fullTable {
+	width: 100%;
+	color: var(--theme-text-1);
+}
+
+.swal2-popup {
+	background-color: var(--theme-background-2) !important;
+	background: var(--theme-background-2) !important;
+}
+
+.swal2-styled.swal2-confirm {
+	background-color: var(--theme-primary);
+	color: var(--theme-text-1);
+}
+
+.swal2-styled.swal2-cancel {
+	color: var(--theme-text-1);
+}
+
+.swal2-icon.swal2-warning {
+	border-color: var(--theme-primary);
+	color: var(--theme-secondary);
 }

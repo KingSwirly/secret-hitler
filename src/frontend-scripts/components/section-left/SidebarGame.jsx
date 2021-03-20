@@ -101,11 +101,16 @@ const SidebarGame = ({ game, socket }) => {
 							status = 'Speed';
 						}
 
-						if (game.disableChat) {
+						if (game.playerChats === 'disabled') {
 							if (status) {
 								status += ' | ';
 							}
 							status += 'No chat';
+						} else if (game.playerChats === 'emotes') {
+							if (status) {
+								status += ' | ';
+							}
+							status += 'Emotes only';
 						}
 
 						if (game.disableGamechat) {
@@ -121,7 +126,7 @@ const SidebarGame = ({ game, socket }) => {
 					})()}
 					<div className="lower-row">
 						<span className="allowed-players">{playersCount()} </span>
-						<span className="divider" style={{ color: '#ddd' }}>
+						<span className="divider" style={{ color: 'var(--theme-text-2)' }}>
 							|
 						</span>
 						<span className="seatedcount">

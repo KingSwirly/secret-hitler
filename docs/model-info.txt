@@ -46,8 +46,9 @@ general
 	timeCreated date
 	experiencedMode bool
 	casualGame bool
-	disableChat bool
+	playerChats string in ['enabled', 'disabled', 'emotes']
 	disableGamechat bool
+	disableObserverLobby bool
 	disableObserver bool
 	playerCount number 5-10
 	type number refers to fasctrack
@@ -115,6 +116,7 @@ private
 		chat string
 		timestamp time
 	votesPeeked
+	remakeVotesPeeked
 	gameFrozen
 	seatedPlayers array 5-10
 		userName string

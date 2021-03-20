@@ -13,8 +13,8 @@
 		top: 10px;
 		left: 10px;
 		z-index: 105;
-		color: #ddd;
-		background: $secondary;
+		color: var(--theme-text-2);
+		background: var(--theme-secondary);
 		font-size: 16px;
 		padding: 4px;
 		opacity: 1;
@@ -24,17 +24,38 @@
 	.timed-mode-counter {
 		position: absolute;
 		bottom: 10px;
-		z-index: 1;
+		z-index: 105;
 		right: 15px;
-		background: #333;
+		background: var(--theme-background-2);
 		padding: 5px;
 		color: #be0804;
 		font-weight: bold;
 		border: 1px dashed #be0804;
 		width: 190px;
 		text-align: center;
+		cursor: pointer;
 	}
 
+	.icon.hourglass.half.timer {
+		opacity: 1 !important;
+		position: absolute;
+		bottom: 5px;
+		right: 2px;
+		z-index: 105;
+		color: var(--theme-text-2) !important;
+		background: #034f61;
+		font-size: 16px !important;
+		padding: 4px;
+		opacity: 1;
+		width: 28px;
+		height: 30px;
+		border: 2px solid lightblue;
+		cursor: pointer;
+
+		&.enabled {
+			color: #db2828 !important;
+		}
+	}
 	.icon.repeat,
 	.icon.remove {
 		opacity: 1 !important;
@@ -42,7 +63,7 @@
 		bottom: 5px;
 		left: 2px;
 		z-index: 105;
-		color: #ddd !important;
+		color: var(--theme-text-2) !important;
 		background: #034f61;
 		font-size: 16px !important;
 		padding: 4px;
@@ -62,8 +83,8 @@
 		top: 10px;
 		right: 10px;
 		z-index: 105;
-		color: #ddd;
-		background: $secondary;
+		color: var(--theme-text-2);
+		background: var(--theme-secondary);
 		font-size: 16px;
 		padding: 4px;
 		opacity: 1;
@@ -75,7 +96,7 @@
 		right: 95px;
 		left: auto;
 		top: 10px;
-		background: $secondary;
+		background: var(--theme-secondary);
 		border: 2px solid lightblue;
 		padding: 4px;
 		height: 31px;
@@ -86,7 +107,7 @@
 	.tracks {
 		transition: all 1s;
 		position: relative;
-		background-color: #1b1b1b;
+		background-color: var(--theme-background-2);
 
 		.electiontracker {
 			position: absolute;
@@ -189,7 +210,7 @@
 
 .tracks.blurred,
 .enactedpolicies-container.blurred {
-	//filter: blur(5px) saturate(60%);
+	filter: saturate(60%);
 	opacity: 0.3;
 }
 .help-message {
@@ -201,7 +222,7 @@
 	left: 0;
 	font-size: 20px;
 	z-index: 3;
-	text-shadow: 0px 0px 7px #000000, 0px 0px 7px #000000, 0px 0px 7px #000000;
+	text-shadow: 0px 0px 7px var(--theme-background-1), 0px 0px 7px var(--theme-background-1), 0px 0px 7px var(--theme-background-1);
 	.secondary-message {
 		font-size: 15px;
 		margin-top: 5px;
@@ -361,7 +382,7 @@
 	transition-delay: 0.5s, 0.5s, 3s, 3s, 1s;
 	transition-duration: 2s, 2s, 3s, 3s, 1s;
 	transform-style: preserve-3d;
-	box-shadow: 0px 0px 4px 3px #969696;
+	box-shadow: 0px 0px 4px 3px var(--theme-text-3);
 }
 .enactedpolicies-card {
 	background-size: contain;
@@ -466,9 +487,43 @@
 	box-shadow: 0 0 26px 6px #fbbd08;
 }
 
+// .cardflinger-card-container.selected::after {
+// 	box-shadow: 0 0 2px 14px lightgreen;
+// 	animation-duration: 0s;
+// }
+
+@keyframes expand-select {
+	from {
+		top: 50%;
+		left: 50%;
+		height: 0;
+		width: 0;
+	}
+	to {
+		top: 0;
+		left: 0;
+		height: 100%;
+		width: 100%;
+	}
+}
+
+.cardflinger-card-container.expanding::after {
+	box-shadow: 0 0 2px 14px lightgreen;
+	animation: 2s ease-in expand-select;
+}
+
 .cardflinger-card-container.selected::after {
 	box-shadow: 0 0 2px 14px lightgreen;
 	animation-duration: 0s;
+}
+
+.cardflinger-card-container.selected.discard::after {
+	box-shadow: 0 0 2px 14px red;
+	animation-duration: 0s;
+}
+
+.cardflinger-card-container.expanding.discard::after {
+	box-shadow: 0 0 2px 14px red;
 }
 
 .cardflinger-card-container.selected.display-help-icons {
@@ -482,7 +537,7 @@
 }
 
 .cardflinger-card-container.active {
-	box-shadow: 0px 0px 4px 3px #969696;
+	box-shadow: 0px 0px 4px 3px var(--theme-text-3);
 }
 
 .experienced .tracks-container {

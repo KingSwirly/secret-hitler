@@ -43,9 +43,9 @@ $eloValues: (1500 0.3 1 0.3) (1600 0.3 1 0.5) (1849 0 1 0.7) (1850 1 1 0.7) (190
 	border: 0;
 	border-radius: 0;
 	margin-top: 0;
-	background-color: #1b1b1b;
+	background-color: var(--theme-background-2);
 	padding: 20px;
-	color: #eee;
+	color: var(--theme-text-1);
 	width: 98%;
 
 	.profile-picture {
@@ -90,6 +90,10 @@ $eloValues: (1500 0.3 1 0.3) (1600 0.3 1 0.5) (1849 0 1 0.7) (1850 1 1 0.7) (190
 		box-shadow: 0 0 5px 2px #007fff !important;
 	}
 
+	.profile-picture.veteran {
+		box-shadow: 0 0 5px 2px #84b8fd !important;
+	}
+
 	.profile-picture.cbell {
 		box-shadow: 0 0 5px 2px #ff1a75 !important;
 	}
@@ -105,9 +109,17 @@ $eloValues: (1500 0.3 1 0.3) (1600 0.3 1 0.5) (1849 0 1 0.7) (1850 1 1 0.7) (190
 	.profile-picture.max {
 		box-shadow: 0 0 5px 2px #b7ae0b !important;
 	}
-	
+
 	.profile-picture.moira {
-		box-shadow: 0 0 5px 2px #fd6088 !important;
+		box-shadow: 0 0 5px 2px #ff95fb !important;
+	}
+
+	.profile-picture.bruno {
+		box-shadow: 0 0 5px 2px #70deaa !important;
+	}
+
+	.profile-picture.anji {
+		box-shadow: 0 0 5px 2px #9073c9 !important;
 	}
 
 	.blacklist-button {
@@ -119,7 +131,7 @@ $eloValues: (1500 0.3 1 0.3) (1600 0.3 1 0.5) (1849 0 1 0.7) (1850 1 1 0.7) (190
 
 	.ui.menu {
 		border-radius: 0.28571429rem 0.28571429rem 0em 0em !important;
-		border: 1px solid #d4d4d5 !important;
+		border: 1px solid var(--theme-text-2) !important;
 	}
 
 	.column-name {
@@ -149,9 +161,9 @@ $eloValues: (1500 0.3 1 0.3) (1600 0.3 1 0.5) (1849 0 1 0.7) (1850 1 1 0.7) (190
 	textarea {
 		width: 100%;
 		flex-grow: 1;
-		background: #fff;
+		background: var(--theme-text-1);
 		resize: none;
-		color: #333;
+		color: var(--theme-background-2);
 		min-height: 60px;
 		margin-bottom: 10px;
 	}

@@ -3,13 +3,17 @@ import CardFlinger from './CardFlinger.jsx';
 import EnactedPolicies from './EnactedPolicies.jsx';
 import PropTypes from 'prop-types';
 import { Popup } from 'semantic-ui-react';
+import playSound from '../reusable/playSound.js';
 
 class Tracks extends React.Component {
 	constructor() {
 		super();
 		this.state = {
 			remakeStatus: false,
-			timedModeTimer: ''
+			minutes: 0,
+			seconds: 0,
+			timedMode: false,
+			showTimer: false
 		};
 	}
 
@@ -26,11 +30,9 @@ class Tracks extends React.Component {
 
 		if (this.props.socket) {
 			this.props.socket.on('updateRemakeVoting', status => {
-				this.setState(
-					{
-						remakeStatus: status
-					}
-				);
+				this.setState({
+					remakeStatus: status
+				});
 			});
 		}
 	}
@@ -39,14 +41,21 @@ class Tracks extends React.Component {
 		const { Notification } = window;
 
 		this._ismounted = false;
+		window.clearInterval(this.intervalId);
 
 		if (Notification && Notification.permission === 'granted' && this.props.socket) {
 			this.props.socket.off('pingPlayer');
 		}
 	}
 
+	toggleTimer = () => {
+		this.setState({
+			showTimer: !this.state.showTimer
+		});
+	};
+
 	componentWillReceiveProps(nextProps) {
-		const { gameInfo } = this.props;
+		const { gameInfo, userInfo } = this.props;
 
 		if (!gameInfo.gameState.isStarted) {
 			this.setState({
@@ -72,14 +81,21 @@ class Tracks extends React.Component {
 				} else {
 					seconds--;
 				}
+				if (!minutes && seconds <= 15) {
+					if ((userInfo.gameSettings && userInfo.gameSettings.soundStatus !== 'Off') || !userInfo.gameSettings) {
+						playSound('clockTick', 'pack1', 500);
+					}
+				}
 
 				if ((!seconds && !minutes) || !nextProps.gameInfo.gameState.timedModeEnabled) {
-					this.setState({ timedModeTimer: '' }, () => {
+					this.setState({ timedMode: false, minutes: 0, seconds: 0 }, () => {
 						window.clearInterval(this.intervalId);
 					});
 				} else {
 					this.setState({
-						timedModeTimer: `Action forced in ${minutes}:${seconds > 9 ? seconds : `0${seconds}`}`
+						timedMode: true,
+						minutes,
+						seconds
 					});
 				}
 			}, 1000);
@@ -88,7 +104,7 @@ class Tracks extends React.Component {
 		if (gameInfo.gameState && gameInfo.gameState.timedModeEnabled && nextProps.gameInfo.gameState && !nextProps.gameInfo.gameState.timedModeEnabled) {
 			window.clearInterval(this.intervalId);
 			this.setState({
-				timedModeTimer: ''
+				timedMode: false
 			});
 		}
 	}
@@ -98,8 +114,8 @@ class Tracks extends React.Component {
 
 		let rebalance69p;
 		let rebalance69pTooltip;
-		let disableChat;
-		let disableChatTooltip;
+		let playerChats;
+		let playerChatsTooltip;
 		let disableGamechat;
 		let disableGamechatTooltip;
 		let experiencedMode;
@@ -110,8 +126,12 @@ class Tracks extends React.Component {
 		let privTooltip;
 		let rainbowgame;
 		let rainbowgameTooltip;
+		let blind;
+		let blindTooltip;
 		let casualgame;
 		let casualgameTooltip;
+		let practiceGame;
+		let practiceGameTooltip;
 		let timedMode;
 		let timedModeTooltip;
 		let isVerifiedOnly;
@@ -133,36 +153,34 @@ class Tracks extends React.Component {
 			game.rebalance6p && game.rebalance7p && game.rebalance9p
 				? ((rebalance69p = <div> R679 </div>), (rebalance69pTooltip = 'Rebalanced 6, 7, & 9 player games'))
 				: game.rebalance6p && game.rebalance7p
-					? ((rebalance69p = <div> R67 </div>), (rebalance69pTooltip = 'Rebalanced 6 & 7 player games'))
-					: game.rebalance6p && game.rebalance9p
-						? ((rebalance69p = <div> R69 </div>), (rebalance69pTooltip = 'Rebalanced 6 & 9 player games'))
-						: game.rebalance7p && game.rebalance9p
-							? ((rebalance69p = <div> R79 </div>), (rebalance69pTooltip = 'Rebalanced 7 & 9 player games'))
-							: game.rebalance6p
-								? ((rebalance69p = <div> R6 </div>), (rebalance69pTooltip = 'Rebalanced 6 player games'))
-								: game.rebalance7p
-									? ((rebalance69p = <div> R7 </div>), (rebalance69pTooltip = 'Rebalanced 7 player games'))
-									: ((rebalance69p = <div> R9 </div>), (rebalance69pTooltip = 'Rebalanced 9 player games'));
+				? ((rebalance69p = <div> R67 </div>), (rebalance69pTooltip = 'Rebalanced 6 & 7 player games'))
+				: game.rebalance6p && game.rebalance9p
+				? ((rebalance69p = <div> R69 </div>), (rebalance69pTooltip = 'Rebalanced 6 & 9 player games'))
+				: game.rebalance7p && game.rebalance9p
+				? ((rebalance69p = <div> R79 </div>), (rebalance69pTooltip = 'Rebalanced 7 & 9 player games'))
+				: game.rebalance6p
+				? ((rebalance69p = <div> R6 </div>), (rebalance69pTooltip = 'Rebalanced 6 player games'))
+				: game.rebalance7p
+				? ((rebalance69p = <div> R7 </div>), (rebalance69pTooltip = 'Rebalanced 7 player games'))
+				: ((rebalance69p = <div> R9 </div>), (rebalance69pTooltip = 'Rebalanced 9 player games'));
 		}
 
-		if (game.disableChat) {
-			disableChat = (
-				<i className="icons">
-					<i className="unmute icon" />
-					<i className="large remove icon" style={{ opacity: '0.6', color: '#1b1b1b' }} />
-				</i>
-			);
-			disableChatTooltip = 'Player Chat Disabled';
+		if (game.playerChats === 'disabled') {
+			playerChats = <i className="mute icon" />;
+			playerChatsTooltip = 'Player Chat Disabled';
+		} else if (game.playerChats === 'emotes') {
+			playerChats = <i className="smile icon" />;
+			playerChatsTooltip = 'Emotes Only';
 		}
 
 		if (game.isVerifiedOnly) {
-			isVerifiedOnly = <i className="spy icon" />;
+			isVerifiedOnly = <i className="thumbs up icon" />;
 			isVerifiedOnlyTooltip = 'Only email-verified players can sit in this game.';
 		}
 
 		if (game.privateOnly) {
-			priv = <i className="lock icon" />;
-			privTooltip = 'Private Only (Anonymous) players only';
+			priv = <i className="spy icon" />;
+			privTooltip = 'Private game only - only anonymous players.';
 		}
 
 		if (!game.privateOnly && game.private) {
@@ -170,11 +188,16 @@ class Tracks extends React.Component {
 			privTooltip = 'Private game.';
 		}
 
+		if (game.blindMode) {
+			blind = <i className="hide icon" />;
+			blindTooltip = 'Blind mode - players are anonymized';
+		}
+
 		if (game.disableGamechat) {
 			disableGamechat = (
 				<i className="icons">
 					<i className="game icon" />
-					<i className="large remove icon" style={{ opacity: '0.6', color: '#1b1b1b' }} />
+					<i className="large remove icon" style={{ opacity: '0.6', color: 'var(--theme-primary)' }} />
 				</i>
 			);
 			disableGamechatTooltip = 'Game Chat Disabled';
@@ -192,7 +215,12 @@ class Tracks extends React.Component {
 
 		if (game.casualGame) {
 			casualgame = <i className="handshake icon" />;
-			casualgameTooltip = 'Casual game - results do not count towards wins and losses';
+			casualgameTooltip = 'Casual game - results do not count towards wins and losses, gameplay rules are not enforced';
+		}
+
+		if (game.practiceGame) {
+			practiceGame = <i className="chess icon" />;
+			practiceGameTooltip = 'Practice game - results do not count towards wins and losses, gameplay rules are enforced';
 		}
 
 		if (game.timedMode) {
@@ -243,9 +271,9 @@ class Tracks extends React.Component {
 						<Popup style={{ zIndex: 999999 }} inverted trigger={rebalance69p} content={rebalance69pTooltip} />
 					</span>
 				)}
-				{disableChat && (
+				{playerChats && (
 					<span>
-						<Popup style={{ zIndex: 999999 }} inverted trigger={disableChat} content={disableChatTooltip} />
+						<Popup style={{ zIndex: 999999 }} inverted trigger={playerChats} content={playerChatsTooltip} />
 					</span>
 				)}
 				{disableGamechat && (
@@ -268,6 +296,11 @@ class Tracks extends React.Component {
 						<Popup style={{ zIndex: 999999 }} inverted trigger={priv} content={privTooltip} />
 					</span>
 				)}
+				{blind && (
+					<span>
+						<Popup style={{ zIndex: 999999 }} inverted trigger={blind} content={blindTooltip} />
+					</span>
+				)}
 				{rainbowgame && (
 					<span>
 						<Popup style={{ zIndex: 999999 }} inverted trigger={rainbowgame} content={rainbowgameTooltip} />
@@ -276,6 +309,11 @@ class Tracks extends React.Component {
 				{casualgame && (
 					<span>
 						<Popup style={{ zIndex: 999999 }} inverted trigger={casualgame} content={casualgameTooltip} />
+					</span>
+				)}
+				{practiceGame && (
+					<span>
+						<Popup style={{ zIndex: 999999 }} inverted trigger={practiceGame} content={practiceGameTooltip} />
 					</span>
 				)}
 				{timedMode && (
@@ -314,7 +352,7 @@ class Tracks extends React.Component {
 
 	render() {
 		const { gameInfo, userInfo, socket } = this.props;
-
+		const { showTimer, timedMode, minutes, seconds } = this.state;
 		/**
 		 * @return {jsx}
 		 */
@@ -329,7 +367,7 @@ class Tracks extends React.Component {
 				classes += ' fail3';
 			}
 
-			if (gameInfo.gameState.isTracksFlipped && (gameInfo.trackState && !gameInfo.trackState.isHidden)) {
+			if (gameInfo.gameState.isTracksFlipped && gameInfo.trackState && !gameInfo.trackState.isHidden) {
 				return <div className={classes} />;
 			}
 		};
@@ -595,7 +633,13 @@ class Tracks extends React.Component {
 								}
 							/>
 						)}
-					{this.state.timedModeTimer && <div className="timed-mode-counter">{this.state.timedModeTimer}</div>}
+					{!showTimer && (minutes || seconds >= 15) && timedMode ? (
+						<i title="Click to view Timer." className="hourglass half timer icon" onClick={this.toggleTimer}></i>
+					) : timedMode ? (
+						<div title="Click to hide until the last 15s." onClick={this.toggleTimer} className="timed-mode-counter">
+							Action forced in {minutes}:{seconds > 9 ? seconds : `0${seconds}`}
+						</div>
+					) : null}
 				</div>
 				<section
 					className={(() => {

@@ -9,7 +9,7 @@ $(document).ready(function() {
 			contentType: 'application/json; charset=UTF-8',
 			statusCode: {
 				200: function(d) {
-					$('.chrome.icon').after('<span>' + d.count + ' </span>');
+					$('#player-count').text(d.count);
 				}
 			}
 		});
@@ -196,7 +196,7 @@ $(document).ready(function() {
 		$(this)
 			.parent()
 			.next()
-			.text('3-12 alphanumeric characters.')
+			.text('3-16 alphanumeric characters.')
 			.slideDown();
 	});
 

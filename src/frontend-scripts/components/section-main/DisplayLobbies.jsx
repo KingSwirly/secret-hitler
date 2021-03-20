@@ -59,8 +59,8 @@ const DisplayLobbies = props => {
 	const optionIcons = () => {
 		let rebalance;
 		let rebalanceTooltip;
-		let disableChat;
-		let disableChatTooltip;
+		let playerChats;
+		let playerChatsTooltip;
 		let disableGamechat;
 		let disableGamechatTooltip;
 		let experiencedMode;
@@ -75,6 +75,8 @@ const DisplayLobbies = props => {
 		let privateOnlyTooltip;
 		let casualGame;
 		let casualGameTooltip;
+		let practiceGame;
+		let practiceGameTooltip;
 		let timedMode;
 		let timedModeTooltip;
 		let isVerifiedOnly;
@@ -124,14 +126,12 @@ const DisplayLobbies = props => {
 			}
 		}
 
-		if (game.disableChat) {
-			disableChat = (
-				<i className="icons">
-					<i className="unmute icon" />
-					<i className="large remove icon" style={{ opacity: '0.6', color: '#1b1b1b' }} />
-				</i>
-			);
-			disableChatTooltip = 'Player Chat Disabled';
+		if (game.playerChats === 'disabled') {
+			playerChats = <i className="mute icon" />;
+			playerChatsTooltip = 'Player Chat Disabled';
+		} else if (game.playerChats === 'emotes') {
+			playerChats = <i className="smile icon" />;
+			playerChatsTooltip = 'Emotes Only';
 		}
 
 		if (game.privateOnly) {
@@ -153,7 +153,7 @@ const DisplayLobbies = props => {
 			disableGamechat = (
 				<i className="icons">
 					<i className="game icon" />
-					<i className="large remove icon" style={{ opacity: '0.6', color: '#1b1b1b' }} />
+					<i className="large remove icon" style={{ opacity: '0.6', color: 'var(--theme-background-2)' }} />
 				</i>
 			);
 			disableGamechatTooltip = 'Game Chat Disabled';
@@ -204,6 +204,11 @@ const DisplayLobbies = props => {
 			unlistedTooltip = 'Unlisted Game - Not Visible in Game List';
 		}
 
+		if (game.practiceGame) {
+			practiceGame = <i className="chess icon" />;
+			practiceGameTooltip = 'Practice game - results do not count towards wins and losses';
+		}
+
 		return (
 			<div className="options-icons-container">
 				{game.isCustomGame && (
@@ -216,14 +221,19 @@ const DisplayLobbies = props => {
 						{casualGame}
 					</span>
 				)}
+				{practiceGame && (
+					<span data-tooltip={practiceGameTooltip} data-inverted="">
+						{practiceGame}
+					</span>
+				)}
 				{rebalance && (
 					<span className="rebalanced" data-tooltip={rebalanceTooltip} data-inverted="">
 						{rebalance}
 					</span>
 				)}
-				{disableChat && (
-					<span data-tooltip={disableChatTooltip} data-inverted="">
-						{disableChat}
+				{playerChats && (
+					<span data-tooltip={playerChatsTooltip} data-inverted="">
+						{playerChats}
 					</span>
 				)}
 				{disableGamechat && (
@@ -436,7 +446,7 @@ const DisplayLobbies = props => {
 
 	return (
 		<React.Fragment>
-			{(!game.isUnlisted || (userInfo.staffRole && userInfo.staffRole !== 'altmod')) && (
+			{(!game.isUnlisted || (userInfo.staffRole && userInfo.staffRole !== 'altmod' && userInfo.staffRole !== 'veteran')) && (
 				<div
 					data-uid={game.uid}
 					onClick={() => {
@@ -451,7 +461,7 @@ const DisplayLobbies = props => {
 								<div className="gamename-column">
 									{renderFlag()}
 									{game.name}
-									{userInfo.staffRole && userInfo.staffRole !== 'altmod' && (
+									{userInfo.staffRole && userInfo.staffRole !== 'altmod' && userInfo.staffRole !== 'veteran' && (
 										<span style={{ color: 'lightblue' }}>{` Created by: ${game.gameCreatorName}`}</span>
 									)}
 								</div>

@@ -4,6 +4,8 @@ import PropTypes from 'prop-types';
 import { Checkbox } from 'semantic-ui-react';
 import moment from 'moment';
 import { CURRENTSEASONNUMBER } from '../../constants';
+import { Message } from 'semantic-ui-react';
+import { processEmotes } from '../../emotes';
 
 export class GamesList extends React.Component {
 	state = {
@@ -15,6 +17,30 @@ export class GamesList extends React.Component {
 
 		gameFilter[value] = !gameFilter[value];
 		changeGameFilter(gameFilter);
+	};
+
+	componentWillReceiveProps(nextProps) {
+		const { generalChats } = this.props;
+		const nextGeneralChats = nextProps.generalChats;
+
+		if (!this.props.stickyEnabled && generalChats.sticky !== nextGeneralChats.sticky) {
+			this.props.setStickyEnabled(true);
+		}
+	}
+
+	renderSticky = () => {
+		if (this.props.stickyEnabled && this.props.generalChats && this.props.generalChats.sticky) {
+			return (
+				<Message
+					onDismiss={() => {
+						this.props.setStickyEnabled(false);
+					}}
+					color="blue"
+				>
+					{processEmotes(this.props.generalChats.sticky, true, this.props.allEmotes)}
+				</Message>
+			);
+		}
 	};
 
 	renderFilters() {
@@ -183,9 +209,16 @@ export class GamesList extends React.Component {
 					);
 				})
 				.sort((a, b) => {
+					const userInGame =
+						userInfo && userInfo.userName && a.userNames && a.userNames.includes(userInfo.userName)
+							? -1
+							: userInfo && userInfo.userName && b.userNames && b.userNames.includes(userInfo.userName)
+							? 1
+							: 0;
+
 					const statusSortOrder = ['notStarted', 'isStarted', 'fascist', 'liberal'];
 					const diff = Math.min(2, statusSortOrder.indexOf(a.gameStatus)) - Math.min(2, statusSortOrder.indexOf(b.gameStatus));
-					return diff || sortTypeThenName(a, b);
+					return userInGame || diff || sortTypeThenName(a, b);
 				})
 				.map((game, index) => (
 					<DisplayLobbies key={game.uid} game={game} socket={this.props.socket} userList={this.props.userList} userInfo={this.props.userInfo} />
@@ -204,7 +237,9 @@ export class GamesList extends React.Component {
 			<section className={this.state.filtersVisible ? 'browser-container' : 'browser-container filters-hidden'}>
 				<a href="#/changelog">
 					<h5 title="A season is an optional new tier of elo that is reset every 3 months.">
-						{new Date() > new Date('2019-09-30') ? `Season ends ${moment(new Date('2020-01-02')).fromNow()}` : `Welcome to season ${CURRENTSEASONNUMBER}`}
+						{new Date() > new Date('2021-01-03')
+							? `Season ends ${moment(new Date('2021-04-01T00:06:00.000Z')).fromNow()}`
+							: `Welcome to season ${CURRENTSEASONNUMBER}`}
 						.
 					</h5>
 				</a>
@@ -220,10 +255,10 @@ export class GamesList extends React.Component {
 								Create a new game
 							</a>
 						) : (
-								<span className="disabled-create-game-button">
-									<button className="fluid ui button primary disabled">{gameBeingCreated ? 'Creating a new game..' : 'Log in to make games'}</button>
-								</span>
-							);
+							<span className="disabled-create-game-button">
+								<button className="fluid ui button primary disabled">{gameBeingCreated ? 'Creating a new game..' : 'Log in to make games'}</button>
+							</span>
+						);
 					})()}
 					<span className={this.state.filtersVisible ? 'enabled' : 'disabled'} onClick={toggleFilter}>
 						<i className="large filter icon" title="Game filters" />
@@ -232,7 +267,10 @@ export class GamesList extends React.Component {
 				<a href="#/leaderboards" className="leaderboard">
 					Leaderboards
 				</a>
-				<div className="browser-body">{this.renderGameList()}</div>
+				<div className="browser-body">
+					{this.renderSticky()}
+					{this.renderGameList()}
+				</div>
 			</section>
 		);
 	}
@@ -251,7 +289,9 @@ GamesList.propTypes = {
 	socket: PropTypes.object,
 	userList: PropTypes.object,
 	gameFilter: PropTypes.object,
-	changeGameFilter: PropTypes.func
+	changeGameFilter: PropTypes.func,
+	generalChats: PropTypes.object,
+	allEmotes: PropTypes.object
 };
 
 export default GamesList;

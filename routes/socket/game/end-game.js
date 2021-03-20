@@ -17,7 +17,10 @@ const { CURRENTSEASONNUMBER } = require('../../../src/frontend-scripts/node-cons
  */
 const saveGame = game => {
 	const summary = game.private.summary.publish();
-	const casualBool = game.general.casualGame ? true : false; // Because Mongo is explicitly typed and integers are not truthy according to it
+	const casualBool = Boolean(game.general.casualGame); // Because Mongo is explicitly typed and integers are not truthy according to it
+	const practiceBool = Boolean(game.general.practiceGame);
+	const unlistedBool = Boolean(game.general.unlisted);
+
 	/**
 	 * @param {object} - object describing game model.
 	 */
@@ -47,7 +50,9 @@ const saveGame = game => {
 		rebalance7p: game.general.rebalance7p,
 		rebalance9p2f: game.general.rebalance9p2f,
 		casualGame: casualBool,
+		practiceGame: practiceBool,
 		customGame: game.customGameSettings.enabled,
+		unlisted: unlistedBool,
 		isRainbow: game.general.rainbowgame,
 		isTournyFirstRound: game.general.isTourny && game.general.tournyInfo.round === 1,
 		isTournySecondRound: game.general.isTourny && game.general.tournyInfo.round === 2
@@ -111,7 +116,7 @@ module.exports.completeGame = (game, winningTeamName) => {
 
 	const winningPrivatePlayers = game.private.seatedPlayers.filter(player => player.role.team === winningTeamName);
 	const winningPlayerNames = winningPrivatePlayers.map(player => player.userName);
-	const { seatedPlayers } = game.private;
+	let { seatedPlayers } = game.private;
 	const { publicPlayersState } = game;
 	const chat = {
 		gameChat: true,
@@ -125,22 +130,19 @@ module.exports.completeGame = (game, winningTeamName) => {
 		]
 	};
 	const remainingPoliciesChat = {
-		gameChat: true,
+		isRemainingPolicies: true,
 		timestamp: new Date(),
 		chat: [
 			{
 				text: 'The remaining policies are '
+			},
+			{
+				policies: game.private.policies.map(policyName => (policyName === 'liberal' ? 'b' : 'r'))
+			},
+			{
+				text: '.'
 			}
-		].concat(
-			game.private.policies
-				.map(policyName => ({
-					text: policyName === 'liberal' ? 'B' : 'R',
-					type: policyName === 'liberal' ? 'liberal' : 'fascist'
-				}))
-				.concat({
-					text: '.'
-				})
-		)
+		]
 	};
 
 	if (!(game.general.isTourny && game.general.tournyInfo.round === 1)) {
@@ -160,6 +162,7 @@ module.exports.completeGame = (game, winningTeamName) => {
 
 	game.general.status = winningTeamName === 'fascist' ? 'Fascists win the game.' : 'Liberals win the game.';
 	game.gameState.isCompleted = winningTeamName;
+	game.gameState.timeCompleted = Date.now();
 	sendGameList();
 
 	publicPlayersState.forEach((publicPlayer, index) => {
@@ -181,7 +184,14 @@ module.exports.completeGame = (game, winningTeamName) => {
 
 	game.general.isRecorded = true;
 
-	if (!game.general.private && !game.general.casualGame && !game.general.unlisted) {
+	// Don't compute Elo for private, casual, custom, private, or unlisted games
+	if (
+		!game.general.private &&
+		!game.general.casualGame &&
+		!(game.customGameSettings && game.customGameSettings.enabled) &&
+		!game.general.practiceGame &&
+		!game.general.unlisted
+	) {
 		Account.find({
 			username: { $in: seatedPlayers.map(player => player.userName) }
 		})
@@ -189,6 +199,20 @@ module.exports.completeGame = (game, winningTeamName) => {
 				const isRainbow = game.general.rainbowgame;
 				const isTournamentFinalGame = game.general.isTourny && game.general.tournyInfo.round === 2;
 				const eloAdjustments = rateEloGame(game, results, winningPlayerNames);
+
+				const byUsername = (a, b) => {
+					if (a.userName === b.userName)
+						// this should never happen, but eh
+						return 0;
+					if (a.userName > b.userName) return 1;
+					return -1;
+				};
+
+				seatedPlayers = [
+					...seatedPlayers.filter(e => e.role.cardName === 'hitler').sort(byUsername),
+					...seatedPlayers.filter(e => e.role.cardName === 'fascist').sort(byUsername),
+					...seatedPlayers.filter(e => e.role.cardName === 'liberal').sort(byUsername)
+				];
 
 				results.forEach(player => {
 					const listUser = userList.find(user => user.userName === player.username);
@@ -198,27 +222,27 @@ module.exports.completeGame = (game, winningTeamName) => {
 					}
 
 					const seatedPlayer = seatedPlayers.find(p => p.userName === player.username);
-					seatedPlayers.forEach(eachPlayer => {
+					seatedPlayers.forEach((eachPlayer, i) => {
 						const playerChange = eloAdjustments[eachPlayer.userName];
-						const activeChange = player.gameSettings.disableSeasonal ? playerChange.changeSeason : playerChange.change;
+						const activeChange = player.gameSettings.disableSeasonal ? playerChange.change : playerChange.changeSeason;
 						if (!player.gameSettings.disableElo) {
 							seatedPlayer.gameChats.push({
 								gameChat: true,
-								timestamp: new Date(),
+								timestamp: new Date(Date.now() + i),
 								chat: [
 									{
 										text: eachPlayer.userName,
-										type: eachPlayer.role.team
+										type: eachPlayer.role.cardName
 									},
 									{
-										text: ` ${activeChange > 0 ? 'increased' : 'decreased'} by `
+										text: `'s Elo: `
+									},
+									{
+										text: ` ${activeChange > 0 ? '+' : '-'}`
 									},
 									{
 										text: Math.abs(activeChange).toFixed(1),
 										type: 'player'
-									},
-									{
-										text: ` points.`
 									}
 								]
 							});

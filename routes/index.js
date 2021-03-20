@@ -5,13 +5,14 @@ const GameSummary = require('../models/game-summary');
 const Profile = require('../models/profile');
 const { socketRoutes } = require('./socket/routes');
 const _ = require('lodash');
-const accounts = require('./accounts');
+const { accounts } = require('./accounts');
 const version = require('../version');
 const { expandAndSimplify, obfIP } = require('./socket/ip-obf');
 const { ProcessImage } = require('./image-processor');
 const savedTorIps = require('../utils/savedtorips');
 const fetch = require('node-fetch');
 const prodCacheBustToken = require('./prodCacheBustToken');
+const { DEFAULTTHEMECOLORS } = require('../src/frontend-scripts/node-constants');
 
 /**
  * @param {object} req - express request object.
@@ -53,7 +54,8 @@ module.exports = () => {
 	fetch('https://check.torproject.org/cgi-bin/TorBulkExitList.py?ip=1.1.1.1')
 		.then(res => res.text())
 		.then(text => {
-			let gatheredTorIps = text.split('\n').slice(3);
+			const gatheredTorIps = text.split('\n').slice(3);
+
 			accounts(gatheredTorIps);
 		})
 		.catch(e => {
@@ -65,6 +67,10 @@ module.exports = () => {
 	socketRoutes();
 
 	app.get('/', (req, res) => {
+		renderPage(req, res, 'page-home', 'home');
+	});
+
+	app.post('/', (req, res) => {
 		renderPage(req, res, 'page-home', 'home');
 	});
 
@@ -108,6 +114,24 @@ module.exports = () => {
 		res.redirect('/game/');
 	});
 
+	const getHSLcolors = hsl => [
+		parseInt(hsl.split(',')[0].split('hsl(')[1], 10),
+		parseInt(
+			hsl
+				.split(',')[1]
+				.trim()
+				.split('%')[0],
+			10
+		),
+		parseInt(
+			hsl
+				.split(',')[2]
+				.trim()
+				.split('%)')[0],
+			10
+		)
+	];
+
 	app.get('/game/', ensureAuthenticated, (req, res) => {
 		const { username } = req.user;
 
@@ -139,15 +163,35 @@ module.exports = () => {
 					return;
 				}
 				const { blacklist } = account.gameSettings;
+
+				const backgroundColor = account.backgroundColor || DEFAULTTHEMECOLORS.baseBackgroundColor;
+				const textColor = account.textColor || DEFAULTTHEMECOLORS.baseTextColor;
+				const [backgroundHue, backgroundSaturation, backgroundLightness] = getHSLcolors(backgroundColor);
+				const [textHue, textSaturation, textLightness] = getHSLcolors(textColor);
+
 				const gameObj = {
 					game: true,
 					staffRole: account.staffRole || '',
 					isContributor: account.isContributor || false,
+					isTournamentMod: account.isTournamentMod || false,
 					verified: req.user.verified,
 					hasNotDismissedSignupModal: account.hasNotDismissedSignupModal,
 					username,
 					gameSettings: account.gameSettings,
-					blacklist
+					blacklist,
+					primaryColor: account.primaryColor || DEFAULTTHEMECOLORS.primaryColor,
+					secondaryColor: account.secondaryColor || DEFAULTTHEMECOLORS.secondaryColor,
+					tertiaryColor: account.tertiaryColor || DEFAULTTHEMECOLORS.tertiaryColor,
+					backgroundColor,
+					secondaryBackgroundColor: `hsl(${backgroundHue}, ${backgroundSaturation}%, ${
+						backgroundLightness > 50 ? backgroundLightness - 7 : backgroundLightness + 7
+					}%)`,
+					tertiaryBackgroundColor: `hsl(${backgroundHue}, ${backgroundSaturation}%, ${
+						backgroundLightness > 50 ? backgroundLightness - 14 : backgroundLightness + 14
+					}%)`,
+					textColor,
+					secondaryTextColor: `hsl(${textHue}, ${textSaturation}%, ${textLightness > 50 ? textLightness - 7 : textLightness + 7}%)`,
+					tertiaryTextColor: `hsl(${textHue}, ${textSaturation}%, ${textLightness > 50 ? textLightness - 14 : textLightness + 14}%)`
 				};
 
 				if (process.env.NODE_ENV === 'production') {
@@ -167,7 +211,6 @@ module.exports = () => {
 				account.save(() => {
 					res.render('game', gameObj);
 				});
-				// account.gameSettings.blacklist = [];
 			});
 		}
 	});
@@ -190,8 +233,34 @@ module.exports = () => {
 			return;
 		}
 
+		renderPage(req, res, '403', '403');
+		return;
+
+		const backgroundColor = DEFAULTTHEMECOLORS.baseBackgroundColor;
+		const textColor = DEFAULTTHEMECOLORS.baseTextColor;
+		const [backgroundHue, backgroundSaturation, backgroundLightness] = getHSLcolors(backgroundColor);
+		const [textHue, textSaturation, textLightness] = getHSLcolors(textColor);
+
+		const secondaryBackgroundColor = `hsl(${backgroundHue}, ${backgroundSaturation}%, ${
+			backgroundLightness > 50 ? backgroundLightness - 5 : backgroundLightness + 5
+		}%)`;
+		const tertiaryBackgroundColor = `hsl(${backgroundHue}, ${backgroundSaturation}%, ${
+			backgroundLightness > 50 ? backgroundLightness - 10 : backgroundLightness + 10
+		}%)`;
+		const secondaryTextColor = `hsl(${textHue}, ${textSaturation}%, ${textLightness > 50 ? textLightness - 7 : textLightness + 7}%)`;
+		const tertiaryTextColor = `hsl(${textHue}, ${textSaturation}%, ${textLightness > 50 ? textLightness - 14 : textLightness + 14}%)`;
+
 		const gameObj = {
-			game: true
+			game: true,
+			primaryColor: DEFAULTTHEMECOLORS.primaryColor,
+			secondaryColor: DEFAULTTHEMECOLORS.secondaryColor,
+			tertiaryColor: DEFAULTTHEMECOLORS.tertiaryColor,
+			backgroundColor,
+			secondaryBackgroundColor,
+			tertiaryBackgroundColor,
+			textColor,
+			secondaryTextColor,
+			tertiaryTextColor
 		};
 
 		if (process.env.NODE_ENV === 'production') {
@@ -202,12 +271,9 @@ module.exports = () => {
 	});
 
 	app.get('/profile', (req, res) => {
+		const authedUser = req.session && req.session.passport && req.session.passport.user;
 		const username = req.query.username;
-		const requestingUser = req.query.requestingUser;
-		if (req && req.user && requestingUser && requestingUser !== 'undefined' && req.user.username && requestingUser !== req.user.username) {
-			res.status(401).send('You are not who you say you are. Please login again.');
-			return;
-		}
+
 		getProfile(username).then(profile => {
 			if (!profile) {
 				res.status(404).send('Profile not found');
@@ -222,16 +288,20 @@ module.exports = () => {
 						_profile.customCardback = account.gameSettings.customCardback;
 						_profile.bio = account.bio;
 
-						Account.findOne({ username: requestingUser }).then(acc => {
-							if (!acc || !acc.staffRole || acc.staffRole === 'altmod') {
-								_profile.lastConnectedIP = 'no looking';
-							} else {
+						Account.findOne({ username: authedUser }).then(acc => {
+							if (
+								acc &&
+								acc.staffRole &&
+								(acc.staffRole === 'moderator' || acc.staffRole === 'editor' || acc.staffRole === 'admin' || acc.staffRole === 'trialmod')
+							) {
 								try {
 									_profile.lastConnectedIP = '-' + obfIP(_profile.lastConnectedIP);
 								} catch (e) {
-									_profile.lastConnectedIP = 'something went wrong';
+									_profile.lastConnectedIP = "Couldn't find IP";
 									console.log(e);
 								}
+							} else {
+								_profile.lastConnectedIP = undefined;
 							}
 
 							res.json(_profile);

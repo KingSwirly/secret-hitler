@@ -3,13 +3,307 @@ import React from 'react'; // eslint-disable-line
 class Changelog extends React.Component {
 	render() {
 		return (
-			<section className="changelog">
+			<section className="changelog" style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
 				<a href="#/">
 					<i className="remove icon" />
 				</a>
 				<div className="ui header">
 					<h2>Changelog</h2>
 				</div>
+				<div className="ui header">
+					<p>Version 1.7.4 released 2-12-2021</p>
+				</div>
+				<h3>New Features:</h3>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>New Valentines themed banner and role cards</strong> - Thanks to jules and Kvon for these!
+					Hopefully we can keep them coming for other seasonal events.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Emote Only games</strong> - Emote only games are here! Enable them in your casual or
+					custom games to only allow chats to use emotes.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Crispy HD Emotes + Lots of new/reworked emotes</strong> - Thanks to jules and rifleman for
+					all the work on these, you can now use lots of upgraded, improved, and new emotes, with more on the way!
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Send feedback from site directly</strong> - you can now send semi-anonymous feedback
+					requests directly from the site header - ToU still applies, of course.
+				</p>
+				<hr style={{ width: '100%' }} />
+				<div className="ui header">
+					<p>Welcome to 2021 🥂 and to Season 13!</p>
+				</div>
+				<h4>The top 10 players of season 12 are:</h4>
+				<ol>
+					<li> pinguREFORMED: 2150 </li>
+					<li> Mell0: 2046 </li>
+					<li> Ohrami2: 2016 </li>
+					<li> DaddyRiddler: 1974 </li>
+					<li> thijsdb: 1968 </li>
+					<li> LyingLizard: 1935 </li>
+					<li> Freekin: 1930 </li>
+					<li> NotKexhiluz: 1929 </li>
+					<li> RichRobby: 1913 </li>
+					<li> CucuOnly: 1912 </li>
+				</ol>
+
+				<div className="ui header">
+					<p>Version 1.7.3 released 1-2-2021</p>
+				</div>
+				<h3>New Features:</h3>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Adds card-based claim menu with order claiming for peek</strong> - Check out your settings
+					to change to the new format, the order-claiming is only available in the new mode for now.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Adds @mod pings to general chat</strong> - Please still use in-game pings for
+					game-specific issues, when applicable.
+				</p>
+
+				<h3>Minor Changes:</h3>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>
+						Removes Google Analytics in favor or more privacy-friendly <a href="https://plausible.io">Plausible Analytics</a>
+					</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Custom games now correctly don't count towards winrate</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Fixes execution verification modal</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Various new Emotes</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Various moderation changes</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Various changes to routing</strong>
+				</p>
+
+				<hr style={{ width: '100%' }} />
+				<div className="ui header">
+					<p>Version 1.7.2 released 12-8-2020</p>
+				</div>
+				<h3>New Features:</h3>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Adds Keyboard Shortcuts to Games</strong> - 1/2/3 for discarding a card as president, 1/2
+					for playing a card as chancellor, and j/n for voting "ja" or "nein" on a government. A 2s delay is applied to prevent accidental card selections, and
+					is optionally applied to voting. These shortcuts are disabled by default; enable them in your game settings.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Execution Confirmation Menu</strong> - a popup to confirm your shot in-game, to prevent
+					trigger slips, is now present (can be disabled in settings)
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Reverse Investigation in Replays</strong> - reverse investigation now properly displays in
+					replays
+				</p>
+
+				<h3>Minor Changes:</h3>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Adds Merriweather font</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Practice games no longer count towards profile winrate</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Various bug fixes and minor visual changes</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Various new emotes</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Various moderation improvements</strong>
+				</p>
+				<hr style={{ width: '100%' }} />
+				<div className="ui header" style={{ fontSize: '1.1em' }}>
+					<p>Welcome to Season 12!</p>
+				</div>
+				<div className="ui header">
+					<p>Version 1.7.1 released 10-1-2020</p>
+				</div>
+				<h3>New Features:</h3>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Various New Emotes</strong> - various contributors have graciously added many new emotes,
+					check them all out!
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Adds Keyboard Shortcuts to Replay Menu</strong> - j/k to go backwards or forwards one
+					step, and h/l to go backwards or forwards one turn.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Adds new user-popup menu to allow better interaction with users</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Various bug fixes and minor visual changes</strong>
+				</p>
+				<h4>The top 10 players of season 11 are:</h4>
+				<ol>
+					<li>CuSith: 2071</li>
+					<li>imbapingu: 2068</li>
+					<li>Starkrush: 1983</li>
+					<li>Ohrami2: 1980</li>
+					<li>Moranki: 1976</li>
+					<li>near1337: 1940</li>
+					<li>SexGodMedusa: 1939</li>
+					<li>1on1: 1920</li>
+					<li>SOOOOZE: 1907</li>
+					<li>NotAnAlt7: 1903</li>
+				</ol>
+				<hr style={{ width: '100%' }} />
+				<div className="ui header" style={{ fontSize: '1.1em' }}>
+					<p>Welcome to Season 11!</p>
+				</div>
+				<div className="ui header">
+					<p>Version 1.7 released 7-1-2020</p>
+				</div>
+				<h3>New Features:</h3>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Emote Selector</strong> - emotes now work more similarly to other chat applications: you
+					can type : (a colon) to bring up a list of emotes, and type more to filter down to specific emotes. You can use the arrow keys or mouse to select one
+					and then press enter or tab to have it fill the chat input, or you can continue to type and it will filter that list down to match. All emotes have
+					been changed - they all now start and end with : (a colon), and they are all lowercase.
+				</p>
+				<img src="../images/1.7.0-images/1-7EmoteSelector.gif" alt="Emote Selector GIF" style={{ width: '50%', alignSelf: 'center' }}></img>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Practice Game Mode</strong> - a casual game mode (no stat/Elo changes), but gameplay rules
+					are enforced. This allows for games just for fun, but with basic gameplay rules enforced. As a result, casual games now have no gameplay rules
+					enforced.
+				</p>
+				<img src="../images/1.7.0-images/1-7GameMode.png" alt="Game Mode Selection" style={{ width: '25%', alignSelf: 'center' }}></img>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Timer UI Improvements</strong> - the timer in-game will be hidden by default, and will
+					only show up in the last 15 seconds or if you click its button. Click the timer to hide it. There is also a new sound when 15 seconds are remaining.
+				</p>
+				<div style={{ width: '75%', display: 'flex', justifyContent: 'center', alignSelf: 'center' }}>
+					<img src="../images/1.7.0-images/1-7TimerIcon.png" alt="Timer UI Hidden" style={{ marginRight: '35px' }}></img>
+					<img src="../images/1.7.0-images/1-7Timer.png" alt="Timer UI Shown"></img>
+				</div>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Terms of Use Version 1.5</strong> - a new version of the Terms of Use has been published
+					<a href="/tou">here</a>.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>End-of-game Elo Reward Changes</strong> - the Elo calculation formula has changed slightly
+					(nothing major, you likely won't even notice). Elo rewards at the end of the game are now sorted by role, and are more readable.
+				</p>
+
+				<img src="../images/1.7.0-images/1-7EloChanges.png" alt="Elo Changes" style={{ maxWidth: '65%', alignSelf: 'center' }}></img>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Remake URLs have changed</strong> - remaking a game will no longer simply add "Remake" to
+					the end of the URL, it will instead update a number. e.g. OriginalUID, OriginalUIDRemake1, OriginalUIDRemake2.
+				</p>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>Deck/Claim Information Customizations</strong> - you can now choose how deck and claim
+					information is presented in your chat. The original way ('RRB' etc) is still the default, and available. However, you can now pick short ('FFL' etc)
+					or full ('fascist, fascist, liberal' etc) as well.
+				</p>
+				<img
+					src="../images/1.7.0-images/1-7ClaimTypeLegacy.png"
+					alt="Deck Customizations (legacy)"
+					style={{ width: '50%', marginBottom: '5px', alignSelf: 'center' }}
+				></img>
+				<img
+					src="../images/1.7.0-images/1-7ClaimTypeShort.png"
+					alt="Deck Customizations (short)"
+					style={{ maxWidth: '50%', marginBottom: '5px', alignSelf: 'center' }}
+				></img>
+				<img
+					src="../images/1.7.0-images/1-7ClaimTypeFull.png"
+					alt="Deck Customizations (full)"
+					style={{ maxWidth: '50%', marginBottom: '15px', alignSelf: 'center' }}
+				></img>
+				<p>
+					<strong style={{ fontSize: '1.1em', color: 'darkmagenta' }}>New Disable Observer Chat in-game-only option</strong> - observer chat has gained a new
+					option to disable observer chat only during the game. You can still disable observer chat completely as well.
+				</p>
+				<img src="../images/1.7.0-images/1-7Observer.png" alt="Observer Chat Selector" style={{ maxWidth: '35%', alignSelf: 'center' }}></img>
+				<h3>Minor Changes:</h3>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Fixed Multiple Discord Login Issues</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Fixed Multiple Minor Blind Mode Issues</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Changed the look of various pop-ups</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Added various error messages</strong>
+				</p>
+				<p>
+					<strong style={{ fontSize: '1em', color: 'darkmagenta' }}>Various other bugs squashed</strong>
+				</p>
+				<br />
+				<h4>The top 10 players of season 10 are:</h4>
+				<ol>
+					<li> thijsdB: 2130 </li>
+					<li> imbapingu: 2026 </li>
+					<li> FinalManu: 2018 </li>
+					<li> GodMedusa: 1971 </li>
+					<li> Reich25: 1959 </li>
+					<li> DoubleAgent: 1945 </li>
+					<li> CowsAreCute: 1910 </li>
+					<li> KyleTheHill: 1910 </li>
+					<li> Mell0: 1907 </li>
+					<li> RyanLockwood: 1905 </li>
+				</ol>
+
+				<div className="ui header" style={{ fontSize: '1.1em' }}>
+					<p>Welcome to Season 10! 4-1-2020</p>
+				</div>
+
+				<h4>The top 10 players of season 9 are:</h4>
+				<ul>
+					<li> rags009: 1992 </li>
+					<li> ChroIIo: 1942 </li>
+					<li> Scorcha: 1930 </li>
+					<li> NotFat: 1924 </li>
+					<li> ChillMedusa: 1899 </li>
+					<li> arteezy: 1886 </li>
+					<li> DanGheesling14: 1886 </li>
+					<li> olly97: 1882 </li>
+					<li> earring: 1854 </li>
+					<li> lucaanders: 1854 </li>
+				</ul>
+
+				<hr style={{ width: '100%' }} />
+				<div className="ui header">
+					<p>Version 1.6.7 released 1-25-2020</p>
+				</div>
+				<p>New feature: Player settable color theming. Check the settings page to change the color palettes.</p>
+				<p>Multiple Bug Fixes and Improvements</p>
+				<p>Multiple Moderation Improvements</p>
+				<div className="ui header">
+					<p>Version 1.6.6 released 1-5-2020</p>
+				</div>
+				<p>Adds 10 New Emotes</p>
+				<p>Adds Color to Replay Chat</p>
+				<p>Fixes Remake Visual Bugs</p>
+				<p>Fixes Leaderboard Caching</p>
+				<p>Adds Veteran AEM Role</p>
+				<p>Multiple Bug Fixes</p>
+				<hr style={{ width: '100%' }} />
+				<div className="ui header">
+					<p>Welcome to 2020 and to Season 9!</p>
+				</div>
+				<h4>The top 10 players of season 8 are:</h4>
+				<ol>
+					<li> godhemzelve: 2067</li>
+					<li> Scorcha: 2024</li>
+					<li> imbapingu: 2013</li>
+					<li> wenshan: 1945</li>
+					<li> Rivstar:1937</li>
+					<li> MaximTheMeme: 1924</li>
+					<li> RetiredManu: 1906</li>
+					<li> codingwizard: 1888</li>
+					<li> trump: 1872</li>
+					<li> IThanosI: 1870</li>
+				</ol>
+
 				<div className="ui header">
 					<p>Version 1.6.5 released 10-5-2019</p>
 				</div>
@@ -56,7 +350,7 @@ class Changelog extends React.Component {
 				<p>Fixes Terms of Use formatting</p>
 				<p>Fixes Claim Window not Disappearing at end of game</p>
 				<p>Fixes Various Moderation Features</p>
-				<hr />
+				<hr style={{ width: '100%' }} />
 
 				<div className="ui header">
 					<p>Version 1.6.1 released 7-10-2019</p>

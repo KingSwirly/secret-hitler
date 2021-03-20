@@ -166,7 +166,7 @@ const enactPolicy = (game, team, socket) => {
 					{
 						text: ` policy has been enacted. (${
 							team === 'liberal' ? game.trackState.liberalPolicyCount.toString() : game.trackState.fascistPolicyCount.toString()
-							}/${team === 'liberal' ? '5' : '6'})`
+						}/${team === 'liberal' ? '5' : '6'})`
 					}
 				]
 			};
@@ -218,11 +218,7 @@ const enactPolicy = (game, team, socket) => {
 							player.cardStatus.isFlipped = true;
 						});
 						game.gameState.audioCue = '';
-						if (process.env.NODE_ENV === 'development') {
-							completeGame(game, game.trackState.liberalPolicyCount === 1 ? 'liberal' : 'fascist');
-						} else {
-							completeGame(game, game.trackState.liberalPolicyCount === 5 ? 'liberal' : 'fascist');
-						}
+						completeGame(game, game.trackState.liberalPolicyCount === 5 ? 'liberal' : 'fascist');
 					},
 					process.env.NODE_ENV === 'development' ? 100 : 2000
 				);
@@ -327,6 +323,10 @@ const selectPresidentVoteOnVeto = (passport, game, data, socket) => {
 		return;
 	}
 
+	if (game.gameState.phase !== 'presidentVoteOnVeto') {
+		return;
+	}
+
 	game.private.summary = game.private.summary.updateLog({
 		presidentVeto: data.vote
 	});
@@ -401,9 +401,7 @@ const selectPresidentVoteOnVeto = (passport, game, data, socket) => {
 						timestamp: new Date(),
 						chat: [
 							{
-								text: `The President and Chancellor have voted to veto this election and the election tracker moves forward. (${
-									game.trackState.electionTrackerCount
-									}/3)`
+								text: `The President and Chancellor have voted to veto this election and the election tracker moves forward. (${game.trackState.electionTrackerCount}/3)`
 							}
 						]
 					};
@@ -423,6 +421,15 @@ const selectPresidentVoteOnVeto = (passport, game, data, socket) => {
 						() => {
 							game.gameState.audioCue = '';
 							president.cardFlingerState = [];
+							if (game.trackState.electionTrackerCount <= 2 && game.publicPlayersState.findIndex(player => player.governmentStatus === 'isChancellor') > -1) {
+								game.publicPlayersState.forEach(player => {
+									if (player.previousGovernmentStatus) {
+										player.previousGovernmentStatus = '';
+									}
+								});
+								game.publicPlayersState[game.gameState.presidentIndex].previousGovernmentStatus = 'wasPresident';
+								game.publicPlayersState[chancellorIndex].previousGovernmentStatus = 'wasChancellor';
+							}
 							if (game.trackState.electionTrackerCount >= 3) {
 								if (!game.gameState.undrawnPolicyCount) {
 									shufflePolicies(game);
@@ -492,6 +499,10 @@ const selectChancellorVoteOnVeto = (passport, game, data, socket) => {
 	}
 
 	if (!publicChancellor || !publicChancellor.userName || passport.user !== publicChancellor.userName) {
+		return;
+	}
+
+	if (game.gameState.phase !== 'chancellorVoteOnVeto') {
 		return;
 	}
 
@@ -708,16 +719,20 @@ const selectChancellorPolicy = (passport, game, data, wasTimer, socket) => {
 				(game.private.currentChancellorOptions[0] === 'liberal' || game.private.currentChancellorOptions[1] === 'liberal')
 			) {
 				// Liberal chancellor chose to play fascist, probably throwing.
-				makeReport({
-					player: chancellor.userName,
-					seat: chancellorIndex + 1,
-					role: 'Liberal',
-					situation: `was given choice as chancellor, and played fascist.`,
-					election: game.general.electionCount,
-					title: game.general.name,
-					uid: game.general.uid,
-					gameType: game.general.casualGame ? 'Casual' : 'Ranked'
-				}, game, 'report');
+				makeReport(
+					{
+						player: chancellor.userName,
+						seat: chancellorIndex + 1,
+						role: chancellor.role.cardName,
+						situation: `was given choice as chancellor, and played fascist.`,
+						election: game.general.electionCount,
+						title: game.general.name,
+						uid: game.general.uid,
+						gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+					},
+					game,
+					'report'
+				);
 			}
 			if (
 				chancellor.role.team === 'fascist' &&
@@ -726,16 +741,20 @@ const selectChancellorPolicy = (passport, game, data, wasTimer, socket) => {
 				(game.private.currentChancellorOptions[0] === 'fascist' || game.private.currentChancellorOptions[1] === 'fascist')
 			) {
 				// Fascist chancellor chose to play 5th liberal.
-				makeReport({
-					player: chancellor.userName,
-					seat: chancellorIndex + 1,
-					role: 'Fascist',
-					situation: `was given choice as chancellor with 4 blues on the track, and played liberal.`,
-					election: game.general.electionCount,
-					title: game.general.name,
-					uid: game.general.uid,
-					gameType: game.general.casualGame ? 'Casual' : 'Ranked'
-				}, game, 'report');
+				makeReport(
+					{
+						player: chancellor.userName,
+						seat: chancellorIndex + 1,
+						role: chancellor.role.cardName,
+						situation: `was given choice as chancellor with 4 blues on the track, and played liberal.`,
+						election: game.general.electionCount,
+						title: game.general.name,
+						uid: game.general.uid,
+						gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+					},
+					game,
+					'report'
+				);
 			}
 		}
 
@@ -758,7 +777,7 @@ const selectChancellorPolicy = (passport, game, data, wasTimer, socket) => {
 					type: enactedPolicy
 				},
 				{
-					text: wasTimer ? 'policy due to the timer expiring.' : ' policy.'
+					text: wasTimer ? ' policy due to the timer expiring.' : ' policy.'
 				}
 			]
 		};
@@ -962,7 +981,7 @@ const selectPresidentPolicy = (passport, game, data, wasTimer, socket) => {
 					type: discarded
 				},
 				{
-					text: wasTimer ? 'policy due to the timer expiring.' : ' policy.'
+					text: wasTimer ? ' policy due to the timer expiring.' : ' policy.'
 				}
 			]
 		};
@@ -988,68 +1007,88 @@ const selectPresidentPolicy = (passport, game, data, wasTimer, socket) => {
 					if (track4blue) {
 						if (passedNicer === 'RR') {
 							// tossed only blue on 4 blues
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Liberal',
-								situation: `got BRR with 4 blues on the track, and tossed the blue.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BRR with 4 blues on the track, and tossed the blue.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						} else if (passedNicer === 'BR') {
 							// did not force 5th blue
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Liberal',
-								situation: `got BBR with 4 blues on the track, and did not force.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BBR with 4 blues on the track, and did not force.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						}
 					} else if (trackReds < 3) {
 						if (passedNicer === 'RR') {
 							// tossed only blue with no benefit
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Liberal',
-								situation: `got BRR before HZ, and tossed the blue.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BRR before HZ, and tossed the blue.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						}
 					} else if (trackReds === 5) {
 						if (passedNicer === 'RR') {
 							// tossed blue in VZ
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Liberal',
-								situation: `got BRR during veto zone, and tossed the blue.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BRR during veto zone, and tossed the blue.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						} else if (passedNicer === 'BR' && track4blue) {
 							// tossed blue in VZ
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Liberal',
-								situation: `got BBR during veto zone, and did not force 5th blue.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BBR during veto zone, and did not force 5th blue.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						}
 					}
 				}
@@ -1059,54 +1098,70 @@ const selectPresidentPolicy = (passport, game, data, wasTimer, socket) => {
 					if (track4blue) {
 						if (passedNicer === 'BB' && chancellor.role.team !== 'liberal') {
 							// forced 5th blue on another fas
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Fascist',
-								situation: `got BBR with 4 blues on the track, and forced blues on a fascist chancellor.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BBR with 4 blues on the track, and forced blues on a fascist chancellor.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						} else if (passedNicer === 'BR' && chancellor.role.team === 'liberal') {
 							// offered 5th blue choice as fas
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Fascist',
-								situation: `got BRR with 4 blues on the track, and offered choice to a liberal chancellor.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BRR with 4 blues on the track, and offered choice to a liberal chancellor.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						}
 					} else if (trackReds === 5) {
 						if (passedNicer === 'BB' && chancellor.role.team !== 'liberal') {
 							// forced 5th blue as hit
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Fascist',
-								situation: `got BBR with 5 reds on the track, and forced blues on a fascist chancellor.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BBR with 5 reds on the track, and forced blues on a fascist chancellor.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						} else if (passedNicer === 'BR' && chancellor.role.team === 'liberal') {
 							// offered 5th blue choice as hit
-							makeReport({
-								player: president.userName,
-								seat: presidentIndex + 1,
-								role: 'Fascist',
-								situation: `got BRR with 5 reds on the track, and offered choice to a liberal chancellor.`,
-								election: game.general.electionCount,
-								title: game.general.name,
-								uid: game.general.uid, gameType:
-									game.general.casualGame ? 'Casual' : 'Ranked'
-							}, game, 'report');
+							makeReport(
+								{
+									player: president.userName,
+									seat: presidentIndex + 1,
+									role: president.role.cardName,
+									situation: `got BRR with 5 reds on the track, and offered choice to a liberal chancellor.`,
+									election: game.general.electionCount,
+									title: game.general.name,
+									uid: game.general.uid,
+									gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+								},
+								game,
+								'report'
+							);
 						}
 					}
 				}
@@ -1252,6 +1307,22 @@ module.exports.selectVoting = (passport, game, data, socket, force = false) => {
 		if (game.gameState.previousElectedGovernment.length) {
 			game.private.seatedPlayers[game.gameState.previousElectedGovernment[0]].playersState[game.gameState.previousElectedGovernment[0]].claim = '';
 			game.private.seatedPlayers[game.gameState.previousElectedGovernment[1]].playersState[game.gameState.previousElectedGovernment[1]].claim = '';
+			let affectedSocketId = Object.keys(io.sockets.sockets).find(
+				socketId =>
+					io.sockets.sockets[socketId].handshake.session.passport &&
+					io.sockets.sockets[socketId].handshake.session.passport.user === game.publicPlayersState[game.gameState.previousElectedGovernment[0]].userName
+			);
+			if (io.sockets.sockets[affectedSocketId]) {
+				io.sockets.sockets[affectedSocketId].emit('removeClaim');
+			}
+			affectedSocketId = Object.keys(io.sockets.sockets).find(
+				socketId =>
+					io.sockets.sockets[socketId].handshake.session.passport &&
+					io.sockets.sockets[socketId].handshake.session.passport.user === game.publicPlayersState[game.gameState.previousElectedGovernment[1]].userName
+			);
+			if (io.sockets.sockets[affectedSocketId]) {
+				io.sockets.sockets[affectedSocketId].emit('removeClaim');
+			}
 		}
 
 		game.general.status = 'Waiting on presidential discard.';
@@ -1280,16 +1351,20 @@ module.exports.selectVoting = (passport, game, data, socket, force = false) => {
 			!verifyCorrect(game.private.currentElectionPolicies[1]) ||
 			!verifyCorrect(game.private.currentElectionPolicies[2])
 		) {
-			makeReport({
-				player: 'A Player',
-				seat: presidentIndex + 1,
-				role: 'Liberal',
-				situation: `has just received an invalid hand!\n${JSON.stringify(game.private.currentElectionPolicies)}`,
-				election: game.general.electionCount,
-				title: game.general.name,
-				uid: game.general.uid,
-				gameType: game.general.casualGame ? 'Casual' : 'Ranked'
-			}, game, 'report');
+			makeReport(
+				{
+					player: 'A Player',
+					seat: presidentIndex + 1,
+					role: president.role.cardName,
+					situation: `has just received an invalid hand!\n${JSON.stringify(game.private.currentElectionPolicies)}`,
+					election: game.general.electionCount,
+					title: game.general.name,
+					uid: game.general.uid,
+					gameType: game.general.casualGame ? 'Casual' : game.general.practiceGame ? 'Practice' : 'Ranked'
+				},
+				game,
+				'report'
+			);
 		}
 
 		const modOnlyChat = {
@@ -1338,7 +1413,8 @@ module.exports.selectVoting = (passport, game, data, socket, force = false) => {
 					isFlipped: false,
 					cardFront: 'policy',
 					cardBack: `${game.private.currentElectionPolicies[0]}p`
-				}
+				},
+				discard: true
 			},
 			{
 				position: 'middle-center',
@@ -1347,7 +1423,8 @@ module.exports.selectVoting = (passport, game, data, socket, force = false) => {
 					isFlipped: false,
 					cardFront: 'policy',
 					cardBack: `${game.private.currentElectionPolicies[1]}p`
-				}
+				},
+				discard: true
 			},
 			{
 				position: 'middle-far-right',
@@ -1356,7 +1433,8 @@ module.exports.selectVoting = (passport, game, data, socket, force = false) => {
 					isFlipped: false,
 					cardFront: 'policy',
 					cardBack: `${game.private.currentElectionPolicies[2]}p`
-				}
+				},
+				discard: true
 			}
 		];
 		sendInProgressGameUpdate(game);
@@ -1620,6 +1698,12 @@ module.exports.selectVoting = (passport, game, data, socket, force = false) => {
 		player.voteStatus.hasVoted = !player.voteStatus.hasVoted ? true : player.voteStatus.didVoteYes ? !data.vote : data.vote;
 		player.voteStatus.didVoteYes = player.voteStatus.hasVoted ? data.vote : false;
 		game.publicPlayersState[playerIndex].isLoader = !player.voteStatus.hasVoted;
+
+		if (force) {
+			player.voteStatus.hasVoted = true;
+			player.voteStatus.didVoteYes = data.vote;
+			game.publicPlayersState[playerIndex].isLoader = false;
+		}
 
 		if (data.vote) {
 			player.cardFlingerState = [

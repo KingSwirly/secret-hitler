@@ -9,9 +9,11 @@ const compression = require('compression');
 const LocalStrategy = require('passport-local').Strategy;
 const DiscordStrategy = require('passport-discord').Strategy;
 const GithubStrategy = require('passport-github2').Strategy;
-const Account = require('./models/account');
-const routesIndex = require('./routes/index');
 const session = require('express-session');
+const helmet = require('helmet');
+
+const routesIndex = require('./routes/index');
+const Account = require('./models/account');
 const { expandAndSimplify } = require('./routes/socket/ip-obf');
 
 let store;
@@ -41,9 +43,7 @@ app.use((req, res, next) => {
 	} catch (e) {
 		console.error(`Malformed URI: ${req.path}`);
 		console.error(
-			`IP data: ${req.headers['x-real-ip']} | ${req.headers['X-Real-IP']} | ${req.headers['X-Forwarded-For']} | ${req.headers['x-forwarded-for']} | ${
-				req.connection.remoteAddress
-			}`
+			`IP data: ${req.headers['cf-connecting-ip']} | ${req.headers['x-real-ip']} | ${req.headers['X-Real-IP']} | ${req.headers['X-Forwarded-For']} | ${req.headers['x-forwarded-for']} | ${req.connection.remoteAddress}`
 		);
 		res.status(500).send('An error occurred.');
 	}
@@ -51,7 +51,12 @@ app.use((req, res, next) => {
 
 app.use((req, res, next) => {
 	const IP =
-		req.headers['x-real-ip'] || req.headers['X-Real-IP'] || req.headers['X-Forwarded-For'] || req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+		req.headers['cf-connecting-ip'] ||
+		req.headers['x-real-ip'] ||
+		req.headers['X-Real-IP'] ||
+		req.headers['X-Forwarded-For'] ||
+		req.headers['x-forwarded-for'] ||
+		req.connection.remoteAddress;
 	if (IP.includes(',')) req.expandedIP = expandAndSimplify(IP.split(',')[0].trim());
 	else req.expandedIP = expandAndSimplify(IP.trim());
 	next();
@@ -66,9 +71,14 @@ app.use(bodyParser.urlencoded({ extended: false, limit: '200kb' })); // limit ne
 app.use(favicon(`${__dirname}/public/favicon.ico`));
 app.use(cookieParser());
 app.use(express.static(`${__dirname}/public`, { maxAge: 86400000 * 28 }));
+app.use(
+	helmet.frameguard({
+		action: 'deny'
+	})
+);
 
 const sessionSettings = {
-	secret: process.env.SECRETSESSIONKEY,
+	secret: process.env.SECRETSESSIONKEY || 'hunter2',
 	cookie: {
 		maxAge: 1000 * 60 * 60 * 24 * 28 // 4 weeks
 	},
@@ -123,7 +133,7 @@ if (process.env.DISCORDCLIENTID) {
 
 passport.serializeUser(Account.serializeUser());
 passport.deserializeUser(Account.deserializeUser());
-mongoose.connect(`mongodb://localhost:27017/secret-hitler-app`, { useNewUrlParser: true });
+mongoose.connect(`mongodb://localhost:27017/secret-hitler-app`, { useNewUrlParser: true, useUnifiedTopology: true });
 mongoose.set('useCreateIndex', true);
 mongoose.set('useFindAndModify', false);
 mongoose.Promise = global.Promise;

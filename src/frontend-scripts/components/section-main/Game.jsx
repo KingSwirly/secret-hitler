@@ -103,11 +103,8 @@ export default class Game extends React.Component {
 	}
 
 	render() {
-		const { userInfo, gameInfo, socket } = this.props;
-		let isFlappy;
-
-		// Not Yet Ready
-		isFlappy = false;
+		const { allEmotes, gameInfo, onClickedTakeSeat, userInfo, userList, socket } = this.props;
+		const isFlappy = false;
 
 		return (
 			<section className="game">
@@ -127,7 +124,7 @@ export default class Game extends React.Component {
 							<section className={gameInfo.general && gameInfo.general.isTourny ? 'gamestatus tourny' : 'gamestatus'}>
 								{gameInfo.general && gameInfo.general.status}
 							</section>
-							<Gamechat userList={this.props.userList} gameInfo={gameInfo} userInfo={userInfo} socket={socket} allEmotes={this.props.allEmotes} />
+							<Gamechat gameInfo={gameInfo} userInfo={userInfo} userList={userList} socket={socket} allEmotes={allEmotes} />
 						</div>
 					</div>
 				</div>
@@ -157,13 +154,7 @@ export default class Game extends React.Component {
 						return classes;
 					})()}
 				>
-					<Players
-						onClickedTakeSeat={this.props.onClickedTakeSeat}
-						userList={this.props.userList}
-						userInfo={userInfo}
-						gameInfo={gameInfo}
-						socket={this.props.socket}
-					/>
+					<Players onClickedTakeSeat={onClickedTakeSeat} userList={userList} userInfo={userInfo} gameInfo={gameInfo} socket={socket} />
 				</div>
 			</section>
 		);
@@ -187,6 +178,6 @@ Game.propTypes = {
 	expandoInfo: PropTypes.string,
 	dispatch: PropTypes.func,
 	userList: PropTypes.object,
-	allEmotes: PropTypes.array,
+	allEmotes: PropTypes.object,
 	onClickedTakeSeat: PropTypes.func
 };

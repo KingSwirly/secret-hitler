@@ -3,20 +3,15 @@ import $ from 'jquery';
 import Dropdown from 'semantic-ui-dropdown';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
+import classnames from 'classnames';
 
 import Policies from './Policies.jsx';
 import { togglePlayerNotes } from '../../actions/actions';
 import { PLAYERCOLORS } from '../../constants';
+import * as Swal from 'sweetalert2';
+import UserPopup from '../reusable/UserPopup.jsx';
 
 $.fn.dropdown = Dropdown;
-
-const mapDispatchToProps = dispatch => ({
-	togglePlayerNotes: playerName => dispatch(togglePlayerNotes(playerName))
-});
-
-const mapStateToProps = ({ playerNotesActive }) => ({
-	playerNotesActive
-});
 
 class Players extends React.Component {
 	state = {
@@ -28,27 +23,15 @@ class Players extends React.Component {
 		reportLength: 0
 	};
 
-	// componentWillReceiveProps(nextProps) {
-	// 	const { userName } = this.props;
-	// 	const { publicPlayersState } = nextProps.gameInfo;
-
-	// 	if (this.props.userInfo.userName && publicPlayersState.length > this.props.gameInfo.publicPlayersState.length) {
-	// 		this.props.socket.emit('getPlayerNotes', {
-	// 			userName,
-	// 			seatedPlayers: publicPlayersState.filter(player => player.userName !== userName).map(player => player.userName)
-	// 		});
-	// 	}
-	// }
-
 	componentDidMount() {
-		const { socket, userInfo } = this.props;
+		const { socket, userInfo, gameInfo } = this.props;
 
 		if (userInfo.gameSettings && !userInfo.gameSettings.disablePlayerNotes) {
 			socket.on('notesUpdate', notes => {
 				this.setState({ playerNotes: notes });
 			});
 
-			const seatedPlayers = this.props.gameInfo.publicPlayersState.filter(player => player.userName !== userInfo.userName).map(player => player.userName);
+			const seatedPlayers = gameInfo.publicPlayersState.filter(player => player.userName !== userInfo.userName).map(player => player.userName);
 
 			if (seatedPlayers.length) {
 				socket.emit('getPlayerNotes', {
@@ -63,19 +46,20 @@ class Players extends React.Component {
 		this.props.socket.off('notesUpdate');
 	}
 
-	handlePlayerDoubleClick = userName => {
-		if ((!this.props.gameInfo.general.private && this.props.userInfo.userName && this.props.userInfo.userName !== userName) || this.props.isReplay) {
+	handlePlayerReport = userName => {
+		const { gameInfo, userInfo, isReplay } = this.props;
+
+		if ((!gameInfo.general.unlisted && !gameInfo.general.private && userInfo.userName && userInfo.userName !== userName) || isReplay) {
 			this.setState({ reportedPlayer: userName });
 			$(this.reportModal).modal('show');
 			$('.ui.dropdown').dropdown();
 		}
 	};
 
-	handlePlayerClick = e => {
+	handlePlayerClick = (index, name) => {
 		const { userInfo, gameInfo, socket } = this.props;
 		const { gameState } = gameInfo;
 		const { phase, clickActionInfo } = gameState;
-		const index = parseInt($(e.currentTarget).attr('data-index'), 10);
 
 		if (phase === 'selectingChancellor' && userInfo.userName) {
 			if (clickActionInfo[0] === userInfo.userName && clickActionInfo[1].includes(index)) {
@@ -106,10 +90,25 @@ class Players extends React.Component {
 
 		if (phase === 'execution' && userInfo.userName) {
 			if (clickActionInfo[0] === userInfo.userName && clickActionInfo[1].includes(index)) {
-				socket.emit('selectedPlayerToExecute', {
-					playerIndex: index,
-					uid: gameInfo.general.uid
-				});
+				if (!gameSettings.disableKillConfirmation) {
+					Swal.fire({
+						title: `Are you sure you want to execute {${index + 1}} ${name}?`,
+						showCancelButton: true,
+						icon: 'warning'
+					}).then(result => {
+						if (result.value) {
+							socket.emit('selectedPlayerToExecute', {
+								playerIndex: index,
+								uid: gameInfo.general.uid
+							});
+						}
+					});
+				} else {
+					socket.emit('selectedPlayerToExecute', {
+						playerIndex: index,
+						uid: gameInfo.general.uid
+					});
+				}
 			}
 		}
 
@@ -127,7 +126,7 @@ class Players extends React.Component {
 		const { publicPlayersState } = this.props.gameInfo;
 
 		if (publicPlayersState && publicPlayersState[i].previousGovernmentStatus) {
-			return <div className={`government-token previous-government-token ${publicPlayersState[i].previousGovernmentStatus}`} />;
+			return <div className={classnames('government-token previous-government-token', publicPlayersState[i].previousGovernmentStatus)} />;
 		}
 	}
 
@@ -135,7 +134,7 @@ class Players extends React.Component {
 		const { publicPlayersState } = this.props.gameInfo;
 
 		if (publicPlayersState && publicPlayersState[i].governmentStatus) {
-			return <div className={`government-token ${publicPlayersState[i].governmentStatus}`} />;
+			return <div className={classnames('government-token', publicPlayersState[i].governmentStatus)} />;
 		}
 	}
 
@@ -180,7 +179,7 @@ class Players extends React.Component {
 	}
 
 	renderPlayers() {
-		const { gameInfo, userInfo } = this.props;
+		const { gameInfo, userInfo, userList } = this.props;
 		const { gameSettings } = userInfo;
 		const { playersState, gameState, publicPlayersState } = gameInfo;
 		const isBlind = gameInfo.general.blindMode && !gameInfo.gameState.isCompleted;
@@ -221,7 +220,16 @@ class Players extends React.Component {
 						prependSeasonAward()}
 					{!(userInfo.gameSettings && Object.keys(userInfo.gameSettings).length && userInfo.gameSettings.disableCrowns) &&
 						(!gameInfo.general.blindMode || gameInfo.gameState.isCompleted) &&
-						player.specialTournamentStatus && <span title="This player was part of the winning team of the Fall 2019 tournament." className="crown-icon" />}
+						player.specialTournamentStatus &&
+						player.specialTournamentStatus === '4captain' && (
+							<span title="This player was the captain of the winning team of the 5th Official Tournament." className="crown-captain-icon" />
+						)}
+					{!(userInfo.gameSettings && Object.keys(userInfo.gameSettings).length && userInfo.gameSettings.disableCrowns) &&
+						(!gameInfo.general.blindMode || gameInfo.gameState.isCompleted) &&
+						player.specialTournamentStatus &&
+						player.specialTournamentStatus === '4' && (
+							<span title="This player was part of the winning team of the 5th Official Tournament." className="crown-icon" />
+						)}
 					{str}
 				</span>
 			);
@@ -239,9 +247,10 @@ class Players extends React.Component {
 
 		return publicPlayersState.map((player, i) => (
 			<div
-				key={i}
-				data-index={i}
-				onClick={this.handlePlayerClick}
+				key={player.userName}
+				onClick={() => {
+					this.handlePlayerClick(i, player.userName);
+				}}
 				style={
 					player.customCardback &&
 					!isBlind &&
@@ -255,7 +264,7 @@ class Players extends React.Component {
 				}
 				className={(() => {
 					let classes = 'player-container';
-					let user = this.props.userList.list ? this.props.userList.list.find(play => play.userName === player.userName) : null;
+					const user = userList.list && userList.list.find(play => play.userName === player.userName);
 
 					if (playersState && Object.keys(playersState).length && playersState[i] && playersState[i].notificationStatus) {
 						classes = `${classes} notifier ${playersState[i].notificationStatus}`;
@@ -274,35 +283,35 @@ class Players extends React.Component {
 					return classes;
 				})()}
 			>
-				<div
-					title={
-						isBlind || player.isPrivate
-							? 'Double click to open a modal to report this player to the moderator team'
-							: `Double click to open a modal to report ${player.userName} to the moderator team`
-					}
-					onDoubleClick={() => {
-						this.handlePlayerDoubleClick(player.userName);
-					}}
-					className={(() => {
-						let classes = 'player-number';
-
-						if (playersState && Object.keys(playersState).length && playersState[i] && playersState[i].nameStatus) {
-							classes = `${classes} ${playersState[i].nameStatus}`;
-						} else if (Object.keys(publicPlayersState).length && publicPlayersState[i].nameStatus) {
-							classes = `${classes} ${publicPlayersState[i].nameStatus}`;
+				<UserPopup userName={player.userName} socket={this.props.socket} position="top center" index={i}>
+					<div
+						title={
+							isBlind || player.isPrivate
+								? 'Double click to open a modal to report this player to the moderator team'
+								: `Double click to open a modal to report ${player.userName} to the moderator team`
 						}
+						className={(() => {
+							let classes = 'player-number';
 
-						if (publicPlayersState[i].leftGame) {
-							classes = `${classes} leftgame`;
-						} else if (!publicPlayersState[i].connected) {
-							classes = `${classes} disconnected`;
-						}
+							if (playersState && Object.keys(playersState).length && playersState[i] && playersState[i].nameStatus) {
+								classes = `${classes} ${playersState[i].nameStatus}`;
+							} else if (Object.keys(publicPlayersState).length && publicPlayersState[i].nameStatus) {
+								classes = `${classes} ${publicPlayersState[i].nameStatus}`;
+							}
 
-						return classes;
-					})()}
-				>
-					{renderPlayerName(player, i)}
-				</div>
+							if (publicPlayersState[i].leftGame) {
+								classes = `${classes} leftgame`;
+							} else if (!publicPlayersState[i].connected) {
+								classes = `${classes} disconnected`;
+							}
+
+							return classes;
+						})()}
+					>
+						{renderPlayerName(player, i)}
+					</div>
+				</UserPopup>
+
 				{this.renderPreviousGovtToken(i)}
 				{this.renderLoader(i)}
 				{this.renderGovtToken(i)}
@@ -410,13 +419,13 @@ class Players extends React.Component {
 			return;
 		}
 
-		const index = gameInfo.gameState.isStarted && gameInfo.publicPlayersState.findIndex(player => player.userName === this.state.reportedPlayer);
+		const index = gameInfo.gameState.isStarted ? gameInfo.publicPlayersState.findIndex(player => player.userName === this.state.reportedPlayer) : undefined;
 		if (this.state.reportLength <= 140) {
 			this.props.socket.emit('playerReport', {
 				uid: gameInfo.general.uid,
 				userName: this.props.userInfo.userName || 'from replay',
 				gameType: gameInfo.general.isTourny ? 'tournament' : gameInfo.general.casualGame ? 'casual' : 'standard',
-				reportedPlayer: `${index ? `{${index + 1}} ${this.state.reportedPlayer}` : this.state.reportedPlayer}`,
+				reportedPlayer: `${gameInfo.gameState.isStarted ? `{${index + 1}} ${this.state.reportedPlayer}` : this.state.reportedPlayer}`,
 				reason: $('input[name="reason"]').attr('value'),
 				comment: this.state.reportTextValue
 			});
@@ -436,11 +445,11 @@ class Players extends React.Component {
 			if (user && user.staffIncognito) {
 				$(this.incognitoModal).modal('show');
 			} else if (userInfo.gameSettings.unbanTime && new Date(userInfo.gameSettings.unbanTime) > new Date()) {
-				window.alert('Sorry, this service is currently unavailable.');
-			} else if (!gameInfo.general.private && (userInfo.gameSettings && userInfo.gameSettings.isPrivate)) {
+				Swal.fire('Sorry, this service is currently unavailable.');
+			} else if (!gameInfo.general.private && userInfo.gameSettings && userInfo.gameSettings.isPrivate) {
 				$(this.privatePlayerInPublicGameModal).modal('show');
 			} else if (
-				(gameInfo.general.rainbowgame && (user && user.wins + user.losses <= 49)) ||
+				(gameInfo.general.rainbowgame && user && user.wins + user.losses <= 49) ||
 				(gameInfo.general.rainbowgame && (!user || !user.wins || !user.losses))
 			) {
 				$(this.notRainbowModal).modal('show');
@@ -616,6 +625,14 @@ class Players extends React.Component {
 	}
 }
 
+const mapDispatchToProps = dispatch => ({
+	togglePlayerNotes: playerName => dispatch(togglePlayerNotes(playerName))
+});
+
+const mapStateToProps = ({ playerNotesActive }) => ({
+	playerNotesActive
+});
+
 Players.propTypes = {
 	roles: PropTypes.array,
 	userInfo: PropTypes.object,
@@ -631,7 +648,4 @@ Players.propTypes = {
 	togglePlayerNotes: PropTypes.func
 };
 
-export default connect(
-	mapStateToProps,
-	mapDispatchToProps
-)(Players);
+export default connect(mapStateToProps, mapDispatchToProps)(Players);

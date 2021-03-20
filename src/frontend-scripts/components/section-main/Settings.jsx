@@ -5,6 +5,7 @@ import Modal from 'semantic-ui-modal';
 import Checkbox from 'semantic-ui-checkbox';
 import Dropzone from 'react-dropzone';
 import PropTypes from 'prop-types';
+import { SketchPicker } from 'react-color';
 
 $.fn.checkbox = Checkbox;
 $.fn.modal = Modal;
@@ -32,6 +33,7 @@ class Settings extends React.Component {
 		disableCrowns: '',
 		disableSeasonal: '',
 		disableElo: '',
+		disableKillConfirmation: '',
 		disableAggregations: '',
 		soundStatus: '',
 		isPrivate: '',
@@ -42,7 +44,20 @@ class Settings extends React.Component {
 		staffIncognito: '',
 		fullheight: false,
 		truncatedSize: 250,
-		safeForWork: false
+		safeForWork: false,
+		keyboardShortcuts: 'disable',
+		claimCharacters: 'short',
+		claimButtons: 'text',
+		primaryColor: 'hsl(225, 73%, 57%)',
+		secondaryColor: 'hsl(225, 48%, 57%)',
+		tertiaryColor: 'hsl(265, 73%, 57%)',
+		backgroundColor: 'hsl(0, 0%, 0%)',
+		textColor: 'hsl(0, 0%, 100%)',
+		primaryPickerVisible: false,
+		secondaryPickerVisible: false,
+		tertiaryPickerVisible: false,
+		backgroundPickerVisible: false,
+		textPickerVisible: false
 	};
 
 	componentDidMount() {
@@ -61,6 +76,7 @@ class Settings extends React.Component {
 			disableConfetti: gameSettings.disableConfetti || '',
 			disableSeasonal: gameSettings.disableSeasonal || '',
 			disableElo: gameSettings.disableElo || '',
+			disableKillConfirmation: gameSettings.disableKillConfirmation || '',
 			disableAggregations: gameSettings.disableAggregations || '',
 			isPrivate: gameSettings.isPrivate || '',
 			fullheight: gameSettings.fullheight || false,
@@ -69,7 +85,30 @@ class Settings extends React.Component {
 			staffDisableStaffColor: gameSettings.staffDisableStaffColor || false,
 			staffIncognito: gameSettings.staffIncognito || false,
 			truncatedSize: gameSettings.truncatedSize || 250,
-			safeForWork: gameSettings.safeForWork
+			safeForWork: gameSettings.safeForWork || false,
+			keyboardShortcuts: gameSettings.keyboardShortcuts || 'disable',
+			claimCharacters: gameSettings.claimCharacters || 'short',
+			claimButtons: gameSettings.claimButtons || 'text',
+			primaryColor: window
+				.getComputedStyle(document.documentElement)
+				.getPropertyValue('--theme-primary')
+				.trim(),
+			secondaryColor: window
+				.getComputedStyle(document.documentElement)
+				.getPropertyValue('--theme-secondary')
+				.trim(),
+			tertiaryColor: window
+				.getComputedStyle(document.documentElement)
+				.getPropertyValue('--theme-tertiary')
+				.trim(),
+			backgroundColor: window
+				.getComputedStyle(document.documentElement)
+				.getPropertyValue('--theme-background-1')
+				.trim(),
+			textColor: window
+				.getComputedStyle(document.documentElement)
+				.getPropertyValue('--theme-text-1')
+				.trim()
 		});
 	}
 
@@ -86,9 +125,45 @@ class Settings extends React.Component {
 		);
 	};
 
-	/**
-	 * @param {string} value - todo
-	 */
+	handleClaimCharactersChange = e => {
+		this.setState(
+			{
+				claimCharacters: e.target.value
+			},
+			() => {
+				this.props.socket.emit('updateGameSettings', {
+					claimCharacters: this.state.claimCharacters
+				});
+			}
+		);
+	};
+
+	handleClaimButtonsChange = e => {
+		this.setState(
+			{
+				claimButtons: e.target.value
+			},
+			() => {
+				this.props.socket.emit('updateGameSettings', {
+					claimButtons: this.state.claimButtons
+				});
+			}
+		);
+	};
+
+	handleKeyboardShortcutsChange = e => {
+		this.setState(
+			{
+				keyboardShortcuts: e.target.value
+			},
+			() => {
+				this.props.socket.emit('updateGameSettings', {
+					keyboardShortcuts: this.state.keyboardShortcuts
+				});
+			}
+		);
+	};
+
 	toggleGameSettings = value => {
 		const obj = {};
 
@@ -101,7 +176,7 @@ class Settings extends React.Component {
 		this.setState({ fontSize: event[0] });
 	};
 
-	sliderDrop = e => {
+	sliderDrop = event => {
 		this.props.socket.emit('updateGameSettings', {
 			fontSize: this.state.fontSize
 		});
@@ -207,15 +282,300 @@ class Settings extends React.Component {
 						</label>
 					</div>
 				</div>
+				<div className="field">
+					<div className="ui radio merriweather checkbox">
+						<input
+							type="radio"
+							id="merriweather"
+							onChange={() => {
+								changeFontSubmit('merriweather');
+							}}
+							checked={this.state.fontChecked === 'merriweather'}
+						/>
+						<label
+							htmlFor="merriweather"
+							style={{
+								fontSize: this.state.fontSize
+							}}
+						>
+							The quick brown fascist jumped over the lazy liberal. (merriweather)
+						</label>
+					</div>
+				</div>
+				<div className="field">
+					<div className="ui radio inter checkbox">
+						<input
+							type="radio"
+							id="inter"
+							onChange={() => {
+								changeFontSubmit('inter');
+							}}
+							checked={this.state.fontChecked === 'inter'}
+						/>
+						<label
+							htmlFor="inter"
+							style={{
+								fontSize: this.state.fontSize
+							}}
+						>
+							The quick brown fascist jumped over the lazy liberal. (inter)
+						</label>
+					</div>
+				</div>
 			</div>
 		);
 	}
 
+	renderTheme() {
+		const {
+			primaryColor,
+			secondaryColor,
+			tertiaryColor,
+			backgroundColor,
+			textColor,
+			primaryPickerVisible,
+			secondaryPickerVisible,
+			tertiaryPickerVisible,
+			backgroundPickerVisible,
+			textPickerVisible
+		} = this.state;
+		const { socket } = this.props;
+		const docStyle = document.documentElement.style;
+		const getHSLstring = color => `hsl(${Math.round(color.h)}, ${Math.round(color.s * 100)}%, ${Math.round(color.l * 100)}%)`;
+		const renderPicker = name => (
+			<div className="picker-container">
+				<div
+					className="picker-close-button"
+					onClick={() => {
+						this.setState({ [`${name}PickerVisible`]: false });
+					}}
+				>
+					X
+				</div>
+				<SketchPicker
+					disableAlpha
+					color={this.state[`${name}Color`]}
+					onChangeComplete={color => {
+						const { hsl } = color;
+						const newColor = getHSLstring(hsl);
+
+						this.setState(
+							{
+								[`${name}Color`]: newColor
+							},
+							() => {
+								const isBackgroundOrText = name === 'background' || name === 'text';
+
+								if (isBackgroundOrText) {
+									const newColorHSL2 = {
+										h: hsl.h,
+										s: hsl.s,
+										l: hsl.l < 0.5 ? (hsl.l <= 0.93 ? hsl.l + 0.07 : 100) : hsl.l >= 0.07 ? hsl.l - 0.07 : 0
+									};
+									const newColorHSL3 = {
+										h: hsl.h,
+										s: hsl.s,
+										l: hsl.l < 0.5 ? (hsl.l <= 0.86 ? hsl.l + 0.14 : 100) : hsl.l >= 0.14 ? hsl.l - 0.14 : 0
+									};
+
+									docStyle.setProperty(`--theme-${name}-1`, newColor);
+									docStyle.setProperty(`--theme-${name}-2`, getHSLstring(newColorHSL2));
+									docStyle.setProperty(`--theme-${name}-3`, getHSLstring(newColorHSL3));
+								} else {
+									docStyle.setProperty(`--theme-${name}`, newColor);
+								}
+
+								socket.emit('handleUpdatedTheme', {
+									[`${name}Color`]: newColor
+								});
+							}
+						);
+					}}
+				/>
+			</div>
+		);
+
+		const getAltThemeColors = () => {
+			const hue = parseInt(primaryColor.split(',')[0].split('hsl(')[1], 10);
+			const saturation = parseInt(
+				primaryColor
+					.split(',')[1]
+					.trim()
+					.split('%')[0],
+				10
+			);
+			const lightness = parseInt(
+				primaryColor
+					.split(',')[2]
+					.trim()
+					.split('%)')[0],
+				10
+			);
+
+			const secondarySaturation = saturation >= 25 ? saturation - 25 : 0;
+			const tertiaryHue = hue > 320 ? hue - 320 : hue + 40;
+
+			return {
+				secondaryColor: `hsl(${hue}, ${secondarySaturation}%, ${lightness}%)`,
+				tertiaryColor: `hsl(${tertiaryHue}, ${saturation}%, ${lightness}%)`
+			};
+		};
+
+		const setAltThemeColors = () => {
+			this.setState(
+				{
+					secondaryColor: getAltThemeColors().secondaryColor,
+					tertiaryColor: getAltThemeColors().tertiaryColor
+				},
+				() => {
+					socket.emit('handleUpdatedTheme', {
+						secondaryColor: getAltThemeColors().secondaryColor,
+						tertiaryColor: getAltThemeColors().tertiaryColor
+					});
+					docStyle.setProperty('--theme-secondary', getAltThemeColors().secondaryColor);
+					docStyle.setProperty('--theme-tertiary', getAltThemeColors().tertiaryColor);
+				}
+			);
+		};
+
+		const resetThemeColors = () => {
+			this.setState(
+				{
+					primaryColor: 'hsl(225, 73%, 57%)',
+					secondaryColor: 'hsl(225, 48%, 57%)',
+					tertiaryColor: 'hsl(265, 73%, 57%)',
+					backgroundColor: 'hsl(0, 0%, 0%)',
+					textColor: 'hsl(0, 0%, 100%)'
+				},
+				() => {
+					socket.emit('handleUpdatedTheme', {
+						primaryColor: 'hsl(225, 73%, 57%)',
+						secondaryColor: 'hsl(225, 48%, 57%)',
+						tertiaryColor: 'hsl(265, 73%, 57%)',
+						backgroundColor: 'hsl(0, 0%, 0%)',
+						textColor: 'hsl(0, 0%, 100%)'
+					});
+					docStyle.setProperty('--theme-primary', 'hsl(225, 73%, 57%)');
+					docStyle.setProperty('--theme-secondary', 'hsl(225, 48%, 57%)');
+					docStyle.setProperty('--theme-tertiary', 'hsl(265, 73%, 57%)');
+					docStyle.setProperty('--theme-background-1', 'hsl(0, 0%, 0%)');
+					docStyle.setProperty('--theme-background-2', 'hsl(0, 0%, 7%)');
+					docStyle.setProperty('--theme-background-3', 'hsl(0, 0%, 14%)');
+					docStyle.setProperty('--theme-text-1', 'hsl(0, 0%, 100%)');
+					docStyle.setProperty('--theme-text-2', 'hsl(0, 0%, 93%)');
+					docStyle.setProperty('--theme-text-3', 'hsl(0, 0%, 86%)');
+				}
+			);
+		};
+
+		return (
+			<>
+				<div className="row centered themes-header">
+					<h3 className="ui header">Color theme</h3>
+				</div>
+				<div className="row centered themes">
+					<div className="two wide column">
+						<h5 className="ui header">Primary</h5>
+						<div
+							className="color-box"
+							onClick={() => {
+								if (!primaryPickerVisible) {
+									this.setState({
+										primaryPickerVisible: true
+									});
+								}
+							}}
+							style={{ background: primaryColor }}
+						></div>
+						{primaryPickerVisible && renderPicker('primary')}
+					</div>
+					<div className="two wide column">
+						<h5 className="ui header">Secondary</h5>
+						<div
+							className="color-box"
+							onClick={() => {
+								if (!secondaryPickerVisible) {
+									this.setState({
+										secondaryPickerVisible: true
+									});
+								}
+							}}
+							style={{ background: secondaryColor }}
+						></div>
+						{secondaryPickerVisible && renderPicker('secondary')}
+					</div>
+					<div className="two wide column">
+						<h5 className="ui header">Tertiary</h5>
+						<div
+							className="color-box"
+							onClick={() => {
+								if (!tertiaryPickerVisible) {
+									this.setState({
+										tertiaryPickerVisible: true
+									});
+								}
+							}}
+							style={{ background: tertiaryColor }}
+						></div>
+						{tertiaryPickerVisible && renderPicker('tertiary')}
+					</div>
+					<div className="two wide column theme-buttons">
+						{primaryColor &&
+							secondaryColor &&
+							tertiaryColor &&
+							!(secondaryColor === getAltThemeColors().secondaryColor && tertiaryColor === getAltThemeColors().tertiaryColor) && (
+								<button className="ui primary button" onClick={setAltThemeColors}>
+									Compute 2nd and 3rd
+								</button>
+							)}
+						{!(
+							primaryColor === 'hsl(225, 73%, 57%)' &&
+							secondaryColor === 'hsl(225, 48%, 57%)' &&
+							tertiaryColor === 'hsl(265, 73%, 57%)' &&
+							backgroundColor === 'hsl(0, 0%, 0%)' &&
+							textColor === 'hsl(0, 0%, 100%)'
+						) && (
+							<button className="ui primary button" onClick={resetThemeColors}>
+								Reset
+							</button>
+						)}
+					</div>
+					<div className="two wide column">
+						<h5 className="ui header">Background</h5>
+						<div
+							className="color-box"
+							onClick={() => {
+								if (!backgroundPickerVisible) {
+									this.setState({
+										backgroundPickerVisible: true
+									});
+								}
+							}}
+							style={{ background: backgroundColor }}
+						></div>
+						{backgroundPickerVisible && renderPicker('background')}
+					</div>
+					<div className="two wide column">
+						<h5 className="ui header">Text</h5>
+						<div
+							className="color-box"
+							onClick={() => {
+								if (!textPickerVisible) {
+									this.setState({
+										textPickerVisible: true
+									});
+								}
+							}}
+							style={{ background: textColor }}
+						></div>
+						{textPickerVisible && renderPicker('text')}
+					</div>
+				</div>
+			</>
+		);
+	}
+
 	render() {
-		/**
-		 * @param {array} files - todo
-		 * @param {array} rejectedFile - todo
-		 */
 		const onDrop = (files, rejectedFile) => {
 			if (rejectedFile.length) {
 				this.setState({
@@ -298,8 +658,8 @@ class Settings extends React.Component {
 				});
 		};
 
-		const previewClearClick = e => {
-			e.preventDefault();
+		const previewClearClick = event => {
+			event.preventDefault();
 			this.setState({ preview: '', cardbackUploadStatus: null });
 		};
 
@@ -309,8 +669,8 @@ class Settings extends React.Component {
 
 		const gameSettings = this.props.gameSettings || window.gameSettings;
 
-		const ownProfileSubmit = e => {
-			e.preventDefault();
+		const ownProfileSubmit = event => {
+			event.preventDefault();
 
 			window.location.hash = `#/profile/${this.props.userInfo.userName}`;
 		};
@@ -374,7 +734,18 @@ class Settings extends React.Component {
 								/>
 								<label />
 							</div>
-							{window.staffRole && window.staffRole !== 'altmod' && window.staffRole !== 'trialmod' && (
+							<h4 className="ui header">Policy claim representation</h4>
+							<select onChange={this.handleClaimCharactersChange} value={this.state.claimCharacters}>
+								<option value="short">Short (L/F)</option>
+								<option value="full">Full (liberal/fascist)</option>
+								<option value="legacy">Legacy (B/R)</option>
+							</select>
+							<h4 className="ui header">Claim Buttons</h4>
+							<select onChange={this.handleClaimButtonsChange} value={this.state.claimButtons}>
+								<option value="text">Legacy (Text)</option>
+								<option value="cards">Cards</option>
+							</select>
+							{window.staffRole && window.staffRole !== 'altmod' && window.staffRole !== 'trialmod' && window.staffRole !== 'veteran' && (
 								<React.Fragment>
 									<h4 className="ui header" style={{ color: '#05bba0' }}>
 										Incognito (hide from userlist)
@@ -432,6 +803,12 @@ class Settings extends React.Component {
 								/>
 								<label />
 							</div>
+							<h4 className="ui header">Keyboard shortcuts</h4>
+							<select onChange={this.handleKeyboardShortcutsChange} value={this.state.keyboardShortcuts}>
+								<option value="disable">Disable keyboard shortcuts</option>
+								<option value="2s">Shortcuts with 2s delay</option>
+								<option value="0s">Shortcuts with no delay</option>
+							</select>
 
 							{window.staffRole && window.staffRole !== 'altmod' && window.staffRole !== 'trialmod' && (
 								<React.Fragment>
@@ -481,6 +858,16 @@ class Settings extends React.Component {
 								/>
 								<label />
 							</div>
+							<h4 className="ui header">Disable kill confirmation</h4>
+							<div className="ui fitted toggle checkbox">
+								<input
+									type="checkbox"
+									name="disablekillconfirmation"
+									checked={this.state.disableKillConfirmation}
+									onChange={() => this.toggleGameSettings('disableKillConfirmation')}
+								/>
+								<label />
+							</div>
 							{window.staffRole && window.staffRole !== 'altmod' && window.staffRole !== 'trialmod' && (
 								<React.Fragment>
 									<h4 className="ui header" style={{ color: '#05bba0' }}>
@@ -522,10 +909,15 @@ class Settings extends React.Component {
 							</div>
 							<h4 className="ui header">Safe For Work Mode</h4>
 							<div className="ui fitted toggle checkbox">
-								<input type="checkbox" name="fullheight" checked={this.state.safeForWork} onChange={() => {
-									this.toggleGameSettings('safeForWork');
-									location.reload();
-								}} />
+								<input
+									type="checkbox"
+									name="fullheight"
+									checked={this.state.safeForWork}
+									onChange={() => {
+										this.toggleGameSettings('safeForWork');
+										location.reload();
+									}}
+								/>
 								<label />
 							</div>
 							<h4 className="ui header" style={{ color: 'red' }}>
@@ -540,6 +932,7 @@ class Settings extends React.Component {
 					<div className="row centered">
 						<div className="four wide column popups" />
 					</div>
+					{this.renderTheme()}
 					<div className="row centered">
 						<div className="eight wide column slider">
 							<h4
@@ -582,9 +975,7 @@ class Settings extends React.Component {
 												<div
 													className="current-cardback"
 													style={{
-														background: `url(../images/custom-cardbacks/${this.props.userInfo.userName}.${gameSettings.customCardback}?${
-															gameSettings.customCardbackUid
-															}) no-repeat`
+														background: `url(../images/custom-cardbacks/${this.props.userInfo.userName}.${gameSettings.customCardback}?${gameSettings.customCardbackUid}) no-repeat`
 													}}
 												/>
 											);
@@ -614,6 +1005,7 @@ class Settings extends React.Component {
 								<div className="ui basic modal cardbackinfo">
 									<div className="header">Cardback info and terms of use</div>
 									<p>Rainbow players only. Can only upload an image once per 30 second.</p>
+									<p>Cardback dimensions are 70x95 pixels, images larger than that will be scaled down to fit.</p>
 									<p>
 										<strong>No NSFW images, nazi anything, or images from the site itself to be tricky.</strong>
 									</p>
